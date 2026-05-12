@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 import re
+from config.settings import PERIODO_ACTUAL
 
 def clean_program_name(name):
     if not isinstance(name, str):
@@ -46,7 +47,10 @@ def process_data(input_csv, output_pregrado, output_posgrado):
         'Ultima_inscripcion': str
     })
     
-    year_col = [c for c in df.columns if 'A' in c and 'o' in c and len(c)<=4][0]
+    df.columns = [re.sub(r'[^\x00-\x7F]+', 'o', c) for c in df.columns]
+    
+    # Identificar columna Año (maneja Ao, Ao, etc)
+    year_col = [c for c in df.columns if ('a' in c.lower() and 'o' in c.lower() and len(c)<=4) or 'ao' in c.lower()][0]
     
     print("Limpiando y normalizando programas...")
     df['Programa_Base'] = df['Programa'].apply(clean_program_name)
@@ -64,7 +68,7 @@ def process_data(input_csv, output_pregrado, output_posgrado):
     df_activos['Desaprobado'] = (df_activos['Nota_Num'] < 11).astype(int)
     
     print("Agrupando datos a nivel de alumno y mes...")
-    student_month = df_activos.groupby(['Periodo_Real', 'Año', 'Mes_Nombre', 'Programa_Base', 'DNI']).agg({
+    student_month = df_activos.groupby(['Periodo_Real', 'Año', 'Mes_Nombre', 'Codigo_Plan_SAP', 'Programa', 'Programa_Base', 'DNI']).agg({
         'Periodio_Admision': 'first',
         'Modalidad_Asignatura': 'first', 
         'Ciclo_Estudiante': 'first',
@@ -76,6 +80,41 @@ def process_data(input_csv, output_pregrado, output_posgrado):
     }).reset_index()
 
     meses_orden = sorted(student_month['Periodo_Real'].dropna().unique())
+    
+    # Filtro: No considerar meses futuros (evita falsas deserciones en el ETL)
+    anio_hoy = PERIODO_ACTUAL // 100
+    mes_hoy = PERIODO_ACTUAL % 100
+    periodo_max = f"{anio_hoy}-{mes_hoy:02d}"
+    meses_orden = [m for m in meses_orden if m <= periodo_max]
+    
+    def get_metadata(code, name):
+        code = str(code).upper()
+        name = str(name).upper()
+        
+        # Facultad
+        fac = "Otros"
+        if code.startswith('E02'): fac = "CC. Administrativas y RRHH"
+        elif code.startswith('E06'): fac = "Derecho"
+        elif code.startswith('E07'): fac = "Educación"
+        elif code.startswith('E0501'): fac = "Contabilidad y Finanzas"
+        elif code.startswith('E0502'): fac = "Economía"
+        elif code.startswith('E10'): fac = "Medicina Humana"
+        
+        # Gestion
+        ges = "Sin Partner (Propio)"
+        if code.startswith('E05') or code.startswith('E07'): ges = "Con Partner (AP)"
+        
+        # Modalidad
+        mod = "Presencial Regular"
+        if '70/30' in name or '50/50' in name: mod = "Presencial (Híbrido)"
+        elif 'DISTANCIA' in name or 'PAT' in name: mod = "Distancia"
+        
+        return fac, ges, mod
+
+    student_month[['Facultad', 'Gestion', 'Modalidad_Agrupada']] = student_month.apply(
+        lambda x: pd.Series(get_metadata(x['Codigo_Plan_SAP'], x['Programa'])), axis=1
+    )
+    
     student_month['Nivel'] = student_month['Programa_Base'].apply(
         lambda x: 'Posgrado' if 'MAESTR' in str(x).upper() else 'Pregrado'
     )
@@ -91,11 +130,11 @@ def process_data(input_csv, output_pregrado, output_posgrado):
     df_cursos.to_csv("Asignaturas_Desaprobados_Historico.csv", index=False, encoding='utf-8-sig')
 
     resultados = []
-    programas = student_month['Programa_Base'].unique()
-    print(f"Procesando {len(programas)} programas a través de {len(meses_orden)} periodos cronológicos...")
+    programas = student_month['Codigo_Plan_SAP'].unique()
+    print(f"Procesando {len(programas)} planes SAP a través de {len(meses_orden)} periodos cronológicos...")
     
     for prog in programas:
-        df_prog = student_month[student_month['Programa_Base'] == prog].copy()
+        df_prog = student_month[student_month['Codigo_Plan_SAP'] == prog].copy()
         
         alumnos_historico = set()
         alumnos_mes_anterior = set()
@@ -127,10 +166,25 @@ def process_data(input_csv, output_pregrado, output_posgrado):
             riesgo_2 = 0
             temprana = 0
             tardia = 0
+            muy_tardia = 0
+            perm_siempre = 0    # Nunca faltó (ausencia previa = 0)
+            perm_siempre = 0    
+            perm_1mes = 0       
+            perm_incontinuo = 0
+            reincorporado = 0
             
             for dni in dnis_activos:
                 if dni in alumnos_mes_actual:
-                    ausencias[dni] = 0 
+                    prev_aus = ausencias.get(dni, 0)
+                    if prev_aus == 0:
+                        perm_siempre += 1       # Siempre matriculado, nunca faltó
+                    elif prev_aus == 1:
+                        perm_1mes += 1          # Regresa tras 1 mes exacto de ausencia
+                    elif prev_aus <= 5:
+                        perm_incontinuo += 1    # Regresa tras 2-5 meses
+                    else:
+                        reincorporado += 1      # Regresa tras 6+ meses
+                    ausencias[dni] = 0
                 else:
                     ausencias[dni] = ausencias.get(dni, 0) + 1
                     meses_fuera = ausencias[dni]
@@ -140,28 +194,13 @@ def process_data(input_csv, output_pregrado, output_posgrado):
                         riesgo_2 += 1
                     elif meses_fuera >= 3 and meses_fuera <= 6:
                         temprana += 1
-                    elif meses_fuera > 6:
+                    elif meses_fuera >= 7 and meses_fuera <= 12:
                         tardia += 1
+                    elif meses_fuera > 12:
+                        muy_tardia += 1
             
-            # Retenidos Continuos (Intersecciones)
-            retenidos_1m = retenidos_3m = retenidos_6m = retenidos_12m = 0
-            if len(historial_sets) >= 2:
-                retenidos_1m = len(alumnos_mes_actual.intersection(historial_sets[-2]))
-            if len(historial_sets) >= 3:
-                s3 = alumnos_mes_actual
-                for s in historial_sets[-3:]:
-                    s3 = s3.intersection(s)
-                retenidos_3m = len(s3)
-            if len(historial_sets) >= 6:
-                s6 = alumnos_mes_actual
-                for s in historial_sets[-6:]:
-                    s6 = s6.intersection(s)
-                retenidos_6m = len(s6)
-            if len(historial_sets) >= 12:
-                s12 = alumnos_mes_actual
-                for s in historial_sets[-12:]:
-                    s12 = s12.intersection(s)
-                retenidos_12m = len(s12)
+            # Intersecciones de retención (mantenidas para compatibilidad)
+            retenidos_1m = perm_siempre + perm_1mes  # Alias directo (compatibilidad)
             
             # Calcular origen de los nuevos
             df_nuevos = df_mes[df_mes['DNI'].isin(nuevos)]
@@ -179,21 +218,30 @@ def process_data(input_csv, output_pregrado, output_posgrado):
                 'Periodo_Real': periodo_real,
                 'Año': año_actual,
                 'Mes': mes_nombre,
-                'Programa': prog,
+                'Codigo_Plan_SAP': prog,
+                'Programa': df_prog['Programa'].mode()[0] if not df_prog.empty else prog,
+                'Facultad': df_prog['Facultad'].iloc[0],
+                'Gestion': df_prog['Gestion'].iloc[0],
+                'Modalidad_Agrupada': df_prog['Modalidad_Agrupada'].iloc[0],
                 'Nivel': df_prog['Nivel'].iloc[0] if not df_prog.empty else "Desconocido",
                 'Egresados': len(egresados_mes_actual),
                 'Admitidos Matriculados': admitidos_matriculados,
                 'Nuevos Traslados': nuevos_traslados,
                 'Nuevos Convalidados': nuevos_convalidados,
-                'Recuperados': recuperados,
+                # Nueva clasificación de permanencia
+                'Permanentes Continuos': perm_siempre + perm_1mes,
+                'Perm. Siempre (0m)': perm_siempre,
+                'Perm. 1mes': perm_1mes,
+                'Permanentes Incontinuos': perm_incontinuo,
+                'Reincorporados': reincorporado,
+                # Deserción escalonada
                 'Riesgo Deserción (1m)': riesgo_1,
                 'Riesgo Deserción (2m)': riesgo_2,
                 'Deserción Temprana (3-6m)': temprana,
-                'Deserción Tardía (>6m)': tardia,
-                'Retenidos (1m)': retenidos_1m,
-                'Retenidos (3m)': retenidos_3m,
-                'Retenidos (6m)': retenidos_6m,
-                'Retenidos (12m)': retenidos_12m,
+                'Deserción Tardía (7-12m)': tardia,
+                'Deserción Muy Tardía (>12m)': muy_tardia,
+                # Compatibilidad KPI (alias)
+                'Retenidos (1m)': perm_siempre + perm_1mes,
                 'Matríc. regular a Distancia': mat_distancia,
                 'Matríc. regular Presencial': mat_presencial,
                 'Estudiantes matrí. TOTAL': total_matriculados
