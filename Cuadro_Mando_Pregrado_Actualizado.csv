@@ -1,0 +1,33 @@
+﻿Mes,Programa,Egresados,No matrí.,Admitidos,Admitidos Matriculados,Recuperados,Matríc. regular a Distancia,Matríc. regular Presencial,Estudiantes matrí. TOTAL,Alumnos en Asignaturas de 2 Meses,Pérdida de Conversión Comercial(Fuga: Admit. - Adm. Mat.),Deserción Neta(Irreversible: No mat. - Recup.),Brecha de Reemplazo(Vacío: Egresados - Adm. Mat.),Crecimiento Neto Estudiantil(Balance: Entradas - Salidas),Tasa Efectividad Comercial(% Cierres: Adm.Mat./Admit.),Tasa Éxito Retención(% Hemorragia: Rec./No mat.),Tasa Renovación Genuina(% Inyección: Adm.Mat./Dist.),Proporción de Matrícula en Cierre(% Presencial: Pres./Total)
+Enero,Educación,4,107,44,27,76,797,71,895,1,+17,+31,-23,-8,61.4%,71.0%,3.4%,7.9%
+Enero,Contabilidad,0,29,7,3,27,77,34,141,0,+4,+2,-3,+1,42.9%,93.1%,3.9%,24.1%
+Enero,Economía,0,21,6,4,9,86,24,123,0,+2,+12,-4,-8,66.7%,42.9%,4.7%,19.5%
+Enero,Derecho,2,38,21,16,0,209,18,243,0,+5,+38,-14,-24,76.2%,0.0%,7.7%,7.4%
+Febrero,Educación,16,117,108,79,71,693,74,917,0,+29,+46,-63,+17,73.1%,60.7%,11.4%,8.1%
+Febrero,Contabilidad,1,35,4,1,16,90,33,140,0,+3,+19,0,-19,25.0%,45.7%,1.1%,23.6%
+Febrero,Economía,1,18,5,3,16,88,22,129,0,+2,+2,-2,0,60.0%,88.9%,3.4%,17.1%
+Febrero,Derecho,1,6,27,22,5,238,20,263,0,+5,+1,-21,+20,81.5%,83.3%,9.2%,7.6%
+Marzo,Educación,4,118,74,51,71,759,88,969,0,+23,+47,-47,0,68.9%,60.2%,6.7%,9.1%
+Marzo,Contabilidad,5,30,8,7,20,82,26,135,0,+1,+10,-2,-8,87.5%,66.7%,8.5%,19.3%
+Marzo,Economía,4,14,8,7,15,93,22,137,0,+1,-1,-3,+4,87.5%,107.1%,7.5%,16.1%
+Marzo,Derecho,0,29,33,26,4,225,18,273,0,+7,+25,-26,+1,78.8%,13.8%,11.6%,6.6%
+Marzo,Administración,0,0,10,10,0,0,0,10,0,0,0,-10,+10,100.0%,N/A*,N/A*,0.0%
+Marzo,Administración y Negocios Internacionales,0,0,5,5,0,0,0,5,0,0,0,-5,+5,100.0%,N/A*,N/A*,0.0%
+Marzo,Gestión de Recursos Humanos,0,0,4,2,0,0,0,2,0,+2,0,-2,+2,50.0%,N/A*,N/A*,0.0%
+Marzo,Marketing,0,0,3,2,0,0,0,2,0,+1,0,-2,+2,66.7%,N/A*,N/A*,0.0%
+Abril,Educación,3,138,67,50,60,761,71,942,10,+17,+78,-47,-31,74.6%,43.5%,6.6%,7.5%
+Abril,Contabilidad,4,28,9,7,17,90,22,136,0,+2,+11,-3,-8,77.8%,60.7%,7.8%,16.2%
+Abril,Economía,0,30,4,1,10,95,18,124,0,+3,+20,-1,-19,25.0%,33.3%,1.1%,14.5%
+Abril,Derecho,0,34,28,20,1,236,19,276,0,+8,+33,-20,-13,71.4%,2.9%,8.5%,6.9%
+Abril,Administración,0,2,7,6,0,8,0,14,0,+1,+2,-6,+4,85.7%,0.0%,75.0%,0.0%
+Abril,Administración y Negocios Internacionales,0,1,4,2,0,4,0,6,0,+2,+1,-2,+1,50.0%,0.0%,50.0%,0.0%
+Abril,Gestión de Recursos Humanos,0,0,2,2,0,2,0,4,0,0,0,-2,+2,100.0%,N/A*,100.0%,0.0%
+Abril,Marketing,0,1,0,0,0,1,0,1,0,0,+1,0,-1,N/A*,0.0%,0.0%,0.0%
+Mayo,Educación,0,110,59,31,60,752,97,940,0,+28,+50,-31,-19,52.5%,54.5%,4.1%,10.3%
+Mayo,Contabilidad,0,17,7,6,13,101,23,143,0,+1,+4,-6,+2,85.7%,76.5%,5.9%,16.1%
+Mayo,Economía,0,21,7,5,13,87,22,127,0,+2,+8,-5,-3,71.4%,61.9%,5.7%,17.3%
+Mayo,Derecho,0,0,23,18,0,251,18,287,0,+5,0,-18,+18,78.3%,N/A*,7.2%,6.3%
+Mayo,Administración,0,0,1,0,0,12,0,12,0,+1,0,0,0,0.0%,N/A*,0.0%,0.0%
+Mayo,Administración y Negocios Internacionales,0,0,1,1,0,5,0,6,0,0,0,-1,+1,100.0%,N/A*,20.0%,0.0%
+Mayo,Gestión de Recursos Humanos,0,0,0,0,0,3,0,3,0,0,0,0,0,N/A*,N/A*,0.0%,0.0%
+Mayo,Marketing,0,0,0,0,0,1,0,1,0,0,0,0,0,N/A*,N/A*,0.0%,0.0%
