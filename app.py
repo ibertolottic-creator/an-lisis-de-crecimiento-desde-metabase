@@ -765,27 +765,40 @@ else:
         st.info("Este gráfico identifica programas donde el bajo rendimiento académico podría estar impulsando la deserción.")
         
         if not df_cursos.empty and anchor_idx:
-            # Agregamos datos por programa en la ventana seleccionada (usamos 6m por defecto para estabilidad)
+            # 1. Definir ventana de tiempo (6 meses) para estabilidad estadística
             periodo_anchor = df_timeline_full.iloc[anchor_idx[0]]['Periodo_Real']
             periodos_validos = df_timeline_full['Periodo_Real'].unique().tolist()
             idx_p = periodos_validos.index(periodo_anchor)
-            periodos_mats = periodos_validos[max(0, idx_p - 5):idx_p+1] # Ventana 6m fija para la matriz
+            periodos_mats = periodos_validos[max(0, idx_p - 5):idx_p+1]
             
-            # Datos Académicos
-            df_acad = df_cursos[df_cursos['Periodo_Real'].isin(periodos_mats)].groupby('Programa_Base').agg({
+            # 2. Filtrar df principal respetando los selectores de la barra lateral (excepto año)
+            df_f_matrix = df.copy()
+            if gestion_sel != "Todos":
+                df_f_matrix = df_f_matrix[df_f_matrix['Gestion'] == gestion_sel]
+            if facultad_sel != "Todas":
+                df_f_matrix = df_f_matrix[df_f_matrix['Facultad'] == facultad_sel]
+            if modalidad_sel != "Todas":
+                df_f_matrix = df_f_matrix[df_f_matrix['Modalidad_Agrupada'] == modalidad_sel]
+
+            # 3. Datos Académicos (Limpiar nombres para asegurar el merge)
+            df_acad_base = df_cursos[df_cursos['Periodo_Real'].isin(periodos_mats)].copy()
+            df_acad_base['Programa_Base'] = df_acad_base['Programa_Base'].str.strip()
+            df_acad = df_acad_base.groupby('Programa_Base').agg({
                 'Desaprobado': 'sum',
                 'Total_Alumnos': 'sum'
             }).reset_index()
             df_acad['Tasa_Reprobacion'] = (df_acad['Desaprobado'] / df_acad['Total_Alumnos']) * 100
             
-            # Datos Deserción
-            df_des = df[df['Periodo_Real'].isin(periodos_mats)].groupby('Programa').agg({
+            # 4. Datos Deserción (Limpiar nombres para asegurar el merge)
+            df_des_base = df_f_matrix[df_f_matrix['Periodo_Real'].isin(periodos_mats)].copy()
+            df_des_base['Programa'] = df_des_base['Programa'].str.strip()
+            df_des = df_des_base.groupby('Programa').agg({
                 'Riesgo Deserción (1m)': 'sum',
                 'Estudiantes matrí. TOTAL': 'mean'
             }).reset_index()
             df_des['Tasa_Deserción'] = (df_des['Riesgo Deserción (1m)'] / df_des['Estudiantes matrí. TOTAL']) * 100
             
-            # Merge
+            # 5. Merge por nombre limpio
             df_matrix = pd.merge(df_acad, df_des, left_on='Programa_Base', right_on='Programa')
             
             fig_matrix = px.scatter(df_matrix, x='Tasa_Reprobacion', y='Tasa_Deserción',
