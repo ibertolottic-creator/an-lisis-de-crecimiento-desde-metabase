@@ -75,9 +75,11 @@ def process_data(input_csv, output_pregrado, output_posgrado):
         'Egresado': 'max',
         'Nota_Num': 'mean', 
         'Desaprobado': 'sum',
+        'Asignatura': 'count',
         'Estado_alumno_Original': 'first',
         'Convalidado': 'first'
     }).reset_index()
+    student_month.rename(columns={'Asignatura': 'Cursos_Mes'}, inplace=True)
 
     meses_orden = sorted(student_month['Periodo_Real'].dropna().unique())
     
@@ -120,14 +122,46 @@ def process_data(input_csv, output_pregrado, output_posgrado):
     )
     
     # Extract courses metrics globally before loop
-    print("Calculando asignaturas con mayor reprobación...")
-    df_cursos = df_activos.groupby(['Año', 'Mes_Nombre', 'Programa_Base', 'Asignatura']).agg({
+    print("Calculando asignaturas con mayor reprobación y deserción...")
+    
+    # Calcular deserción a nivel de estudiante-mes
+    df_activos = df_activos.sort_values(['DNI', 'Año', 'Mes_Nombre']) # Orden cronológico implícito en los datos
+    # Como los datos pueden no estar perfectamente ordenados por Periodo_Real si lo hacemos por nombre,
+    # usamos el orden de meses_orden que ya tenemos.
+    period_to_idx = {p: i for i, p in enumerate(meses_orden)}
+    df_activos['Idx_Actual'] = df_activos['Periodo_Real'].map(period_to_idx)
+    
+    df_activos = df_activos.sort_values(['DNI', 'Idx_Actual'])
+    df_activos['Idx_Siguiente'] = df_activos.groupby('DNI')['Idx_Actual'].shift(-1)
+    
+    max_idx = len(meses_orden) - 1
+    
+    # Vectorized dropout calculation
+    # Drop if Siguiente is NaN AND Actual < max_idx (Last period but not end of dataset)
+    # OR if Siguiente - Actual > 1 (Gap in enrollment)
+    cond1 = df_activos['Idx_Siguiente'].isna() & (df_activos['Idx_Actual'] < max_idx)
+    cond2 = (df_activos['Idx_Siguiente'] - df_activos['Idx_Actual']) > 1
+    df_activos['Desercion'] = (cond1 | cond2).astype(int)
+    
+    df_cursos = df_activos.groupby(['Periodo_Real', 'Año', 'Mes_Nombre', 'Programa_Base', 'Asignatura']).agg({
         'Desaprobado': 'sum',
+        'Desercion': 'sum',
         'DNI': 'nunique'
     }).reset_index()
+    
     df_cursos.rename(columns={'DNI': 'Total_Alumnos'}, inplace=True)
     df_cursos['Tasa_Desaprobados'] = (df_cursos['Desaprobado'] / df_cursos['Total_Alumnos']).round(4)
+    df_cursos['Tasa_Desercion'] = (df_cursos['Desercion'] / df_cursos['Total_Alumnos']).round(4)
     df_cursos.to_csv("Asignaturas_Desaprobados_Historico.csv", index=False, encoding='utf-8-sig')
+
+    # Integrar marca de Deserción al dataset longitudinal
+    student_month = pd.merge(
+        student_month, 
+        df_activos[['DNI', 'Periodo_Real', 'Desercion']], 
+        on=['DNI', 'Periodo_Real'], 
+        how='left'
+    ).fillna({'Desercion': 0})
+    student_month['Desercion'] = student_month['Desercion'].astype(int)
 
     resultados = []
     programas = student_month['Codigo_Plan_SAP'].unique()
@@ -168,10 +202,10 @@ def process_data(input_csv, output_pregrado, output_posgrado):
             tardia = 0
             muy_tardia = 0
             perm_siempre = 0    # Nunca faltó (ausencia previa = 0)
-            perm_siempre = 0    
             perm_1mes = 0       
             perm_incontinuo = 0
-            reincorporado = 0
+            reincorporado_6_12 = 0
+            reincorporado_gt12 = 0
             
             for dni in dnis_activos:
                 if dni in alumnos_mes_actual:
@@ -182,8 +216,10 @@ def process_data(input_csv, output_pregrado, output_posgrado):
                         perm_1mes += 1          # Regresa tras 1 mes exacto de ausencia
                     elif prev_aus <= 5:
                         perm_incontinuo += 1    # Regresa tras 2-5 meses
+                    elif prev_aus <= 12:
+                        reincorporado_6_12 += 1 # Regresa tras 6-12 meses
                     else:
-                        reincorporado += 1      # Regresa tras 6+ meses
+                        reincorporado_gt12 += 1 # Regresa tras 12+ meses
                     ausencias[dni] = 0
                 else:
                     ausencias[dni] = ausencias.get(dni, 0) + 1
@@ -233,9 +269,11 @@ def process_data(input_csv, output_pregrado, output_posgrado):
                 'Perm. Siempre (0m)': perm_siempre,
                 'Perm. 1mes': perm_1mes,
                 'Permanentes Incontinuos': perm_incontinuo,
-                'Reincorporados': reincorporado,
+                'Reincorporados (6-12m)': reincorporado_6_12,
+                'Reincorporados (>12m)': reincorporado_gt12,
                 # Deserción escalonada
                 'Riesgo Deserción (1m)': riesgo_1,
+
                 'Riesgo Deserción (2m)': riesgo_2,
                 'Deserción Temprana (3-6m)': temprana,
                 'Deserción Tardía (7-12m)': tardia,
