@@ -4,11 +4,10 @@ FROM python:3.11-slim
 # Directorio de trabajo en el contenedor
 WORKDIR /app
 
-# Instalar dependencias del sistema necesarias para algunas librerías de Python
+# Instalar dependencias del sistema necesarias
 RUN apt-get update && apt-get install -y \
     build-essential \
     curl \
-    software-properties-common \
     git \
     && rm -rf /var/lib/apt/lists/*
 
