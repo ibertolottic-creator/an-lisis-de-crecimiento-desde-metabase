@@ -30,8 +30,8 @@ def load_data(mtime):
                 elif "temprana" in c or "3-6" in c: new_cols[col] = "Deserción Temprana (3-6m)"
                 elif "1m" in c: new_cols[col] = "Riesgo Deserción (1m)"
                 elif "2m" in c: new_cols[col] = "Riesgo Deserción (2m)"
-            elif "egresado" in c:
-                new_cols[col] = "Egresados"
+            elif "egresado" in c or "concluyeron" in c:
+                new_cols[col] = "Concluyeron el Plan"
             elif "recuperado" in c:
                 new_cols[col] = "Recuperados"
             elif "admitido" in c and "matri" in c:
@@ -142,7 +142,12 @@ else:
     programa_seleccionado = st.sidebar.selectbox("Seleccionar Programa Específico", programas_disponibles)
     
     st.sidebar.markdown("---")
-    meses_disponibles = sorted([str(x) for x in df_filtrado_año['Mes'].unique() if pd.notnull(x)])
+    
+    # Orden cronológico para los meses
+    orden_meses = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Setiembre', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
+    meses_brutos = [str(x) for x in df_filtrado_año['Mes'].unique() if pd.notnull(x) and str(x).lower() != 'nan']
+    meses_disponibles = sorted(meses_brutos, key=lambda x: orden_meses.index(x) if x in orden_meses else 99)
+    
     mes_seleccionado = st.sidebar.selectbox("Seleccionar Mes para KPIs", meses_disponibles, index=len(meses_disponibles)-1 if meses_disponibles else 0)
     
     # -----------------------------------------------------
@@ -215,7 +220,7 @@ else:
                      d.get('Reincorporados (6-12m)', pd.Series([0])).sum() + 
                      d.get('Reincorporados (>12m)', pd.Series([0])).sum())
             ent = d['Admitidos Matriculados'].sum() + recup
-            sal = d.get('Riesgo Deserción (1m)', pd.Series([0])).sum() + d['Egresados'].sum()
+            sal = d.get('Riesgo Deserción (1m)', pd.Series([0])).sum() + d['Concluyeron el Plan'].sum()
             return ent - sal
             
         crecimiento_curr = calc_crecimiento(df_current)
@@ -247,7 +252,7 @@ else:
     tab_crec, tab_adm, tab_perm = st.tabs(["📈 Crecimiento Neto", "🎯 Admitidos Matriculados", "🛡️ Permanentes y Reincorporados"])
     
     with tab_crec:
-        st.info("💡 **Fórmula:** Ingresos (Nuevos + Recuperados) - Fugas del Mes (Riesgo 1m + Egresados). Mide si la universidad sumó o perdió alumnos reales.")
+        st.info("💡 **Fórmula:** Ingresos (Nuevos + Recuperados) - Fugas del Mes (Riesgo 1m + Concluyeron el Plan). Mide si la universidad sumó o perdió alumnos reales.")
         c1, c2, c3, c4, c5, c6, c7 = st.columns(7)
         c1.metric("Este Mes", int(crecimiento_curr))
         c2.metric("Últ. 3 Meses", int(crecimiento_3m))
@@ -264,7 +269,7 @@ else:
         df_flow = df_timeline_full.copy()
         # Aseguramos que las salidas sean negativas para el gráfico
         df_flow['Fuga (Riesgo 1m)'] = -df_flow['Riesgo Deserción (1m)']
-        df_flow['Egresados_Neg'] = -df_flow['Egresados']
+        df_flow['Egresados_Neg'] = -df_flow['Concluyeron el Plan']
         
         fig_flow = go.Figure()
         
@@ -295,7 +300,7 @@ else:
         ))
         fig_flow.add_trace(go.Bar(
             x=df_flow['Periodo_Real'], y=df_flow['Egresados_Neg'],
-            name='Egresados', marker_color='#7F7F7F',
+            name='Concluyeron el Plan', marker_color='#7F7F7F',
             hovertemplate='%{y} egresados'
         ))
         
@@ -430,8 +435,8 @@ else:
     ))
     fig_bal.add_trace(go.Bar(
         x=df_balance['Periodo_Real'],
-        y=-df_balance['Egresados'],
-        name='⚪ Egresados (Salidas)', marker_color='#7F7F7F',
+        y=-df_balance['Concluyeron el Plan'],
+        name='⚪ Concluyeron el Plan (Salidas)', marker_color='#7F7F7F',
         hovertemplate='%{y} egresados'
     ))
     # Línea de Total Activo

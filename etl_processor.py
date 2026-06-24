@@ -47,9 +47,17 @@ def process_data(input_csv, output_pregrado, output_posgrado):
         'Ultima_inscripcion': str
     })
     
-    df.columns = [re.sub(r'[^\x00-\x7F]+', 'o', c) for c in df.columns]
+    # Normalización de nombres de columnas para eliminar tildes y caracteres especiales
+    import unicodedata
+    def clean_col(c):
+        # Manejo especial
+        c = c.replace('Año', 'Ano').replace('año', 'ano')
+        c = unicodedata.normalize('NFKD', c).encode('ASCII', 'ignore').decode('utf-8')
+        return c.strip()
+        
+    df.columns = [clean_col(c) for c in df.columns]
     
-    # Identificar columna Año (maneja Ao, Ao, etc)
+    # Identificar columna Año (maneja Ano, Ao, etc)
     year_col = [c for c in df.columns if ('a' in c.lower() and 'o' in c.lower() and len(c)<=4) or 'ao' in c.lower()][0]
     
     print("Limpiando y normalizando programas...")
@@ -63,12 +71,38 @@ def process_data(input_csv, output_pregrado, output_posgrado):
     df_activos['Mes_Nombre'] = df_activos.apply(extract_month_name, axis=1)
     df_activos['Año'] = df_activos[year_col]
     
+    # Filtro inteligente: Eliminar periodos futuros y detectar el último mes si está incompleto
+    volumen_por_mes = df_activos['Periodo_Real'].value_counts().sort_index()
+    periodos_ordenados = volumen_por_mes.index.tolist()
+    
+    # 1. Descartar estrictamente lo que sea mayor al mes de reloj actual
+    anio_hoy = PERIODO_ACTUAL // 100
+    mes_hoy = PERIODO_ACTUAL % 100
+    limite_reloj = f"{anio_hoy}-{mes_hoy:02d}"
+    
+    periodos_ordenados = [p for p in periodos_ordenados if p <= limite_reloj]
+    periodo_max_global = periodos_ordenados[-1] if periodos_ordenados else limite_reloj
+    
+    # 2. Detectar anomalía de volumen (caída brusca por matrículas adelantadas)
+    if len(periodos_ordenados) >= 2:
+        ult_mes = volumen_por_mes[periodos_ordenados[-1]]
+        penult_mes = volumen_por_mes[periodos_ordenados[-2]]
+        # Si el último mes tiene menos del 30% del volumen del anterior, está incompleto
+        if ult_mes < (penult_mes * 0.3):
+            periodo_max_global = periodos_ordenados[-2]
+            print(f"ATENCION: Mes {periodos_ordenados[-1]} detectado como incompleto ({ult_mes} vs {penult_mes} registros). Se excluye del consolidado.")
+            
+    print(f"Filtrando exclusiones (max periodo consolidado: {periodo_max_global})...")
+    df_activos = df_activos[df_activos['Periodo_Real'] <= periodo_max_global].copy()
+    
     # Calculate grade metrics per course row
     df_activos['Nota_Num'] = pd.to_numeric(df_activos['Nota'], errors='coerce').fillna(0)
     df_activos['Desaprobado'] = (df_activos['Nota_Num'] < 11).astype(int)
     
     print("Agrupando datos a nivel de alumno y mes...")
-    student_month = df_activos.groupby(['Periodo_Real', 'Año', 'Mes_Nombre', 'Codigo_Plan_SAP', 'Programa', 'Programa_Base', 'DNI']).agg({
+    
+    # Construir dict de agregación dinámicamente según columnas disponibles
+    agg_dict = {
         'Periodio_Admision': 'first',
         'Modalidad_Asignatura': 'first', 
         'Ciclo_Estudiante': 'first',
@@ -76,9 +110,12 @@ def process_data(input_csv, output_pregrado, output_posgrado):
         'Nota_Num': 'mean', 
         'Desaprobado': 'sum',
         'Asignatura': 'count',
-        'Estado_alumno_Original': 'first',
         'Convalidado': 'first'
-    }).reset_index()
+    }
+    if 'Estado_alumno_Original' in df_activos.columns:
+        agg_dict['Estado_alumno_Original'] = 'first'
+    
+    student_month = df_activos.groupby(['Periodo_Real', 'Año', 'Mes_Nombre', 'Codigo_Plan_SAP', 'Programa', 'Programa_Base', 'DNI']).agg(agg_dict).reset_index()
     student_month.rename(columns={'Asignatura': 'Cursos_Mes'}, inplace=True)
 
     meses_orden = sorted(student_month['Periodo_Real'].dropna().unique())
@@ -167,6 +204,20 @@ def process_data(input_csv, output_pregrado, output_posgrado):
     programas = student_month['Codigo_Plan_SAP'].unique()
     print(f"Procesando {len(programas)} planes SAP a través de {len(meses_orden)} periodos cronológicos...")
     
+    # Pre-calcular egresados únicos: cada DNI cuenta UNA sola vez,
+    # asignado a su ULTIMO plan y ULTIMO periodo donde aparece con Egresado=SI
+    eg_rows = student_month[student_month['Egresado'] == 'SI'].copy()
+    if not eg_rows.empty:
+        eg_unicos = eg_rows.sort_values('Periodo_Real').groupby('DNI').agg({
+            'Codigo_Plan_SAP': 'last',
+            'Periodo_Real': 'last'
+        }).reset_index()
+        # Crear un set de tuplas (DNI, Plan, Periodo) para consulta rapida
+        egresados_lookup = set(zip(eg_unicos['Codigo_Plan_SAP'], eg_unicos['Periodo_Real'], eg_unicos['DNI']))
+        print(f"Egresados unicos detectados: {len(eg_unicos)} (de {len(eg_rows)} filas con Egresado=SI)")
+    else:
+        egresados_lookup = set()
+    
     for prog in programas:
         df_prog = student_month[student_month['Codigo_Plan_SAP'] == prog].copy()
         
@@ -186,7 +237,10 @@ def process_data(input_csv, output_pregrado, output_posgrado):
                 
             historial_sets.append(alumnos_mes_actual)
                 
-            egresados_mes_actual = set(df_mes[df_mes['Egresado'] == 'SI']['DNI'].unique())
+            egresados_mes_actual = set(
+                dni for dni in df_mes[df_mes['Egresado'] == 'SI']['DNI'].unique()
+                if (prog, periodo_real, dni) in egresados_lookup
+            )
             egresados_historicos.update(egresados_mes_actual)
             
             nuevos = alumnos_mes_actual - alumnos_historico
@@ -240,8 +294,12 @@ def process_data(input_csv, output_pregrado, output_posgrado):
             
             # Calcular origen de los nuevos
             df_nuevos = df_mes[df_mes['DNI'].isin(nuevos)]
-            nuevos_traslados = df_nuevos[df_nuevos['Estado_alumno_Original'].str.contains('TRASLADO', na=False, case=False)]['DNI'].nunique()
-            nuevos_convalidados = df_nuevos[(df_nuevos['Estado_alumno_Original'].str.contains('CONVALIDA', na=False, case=False)) | (df_nuevos['Convalidado'] == 'SI')]['DNI'].nunique()
+            if 'Estado_alumno_Original' in df_nuevos.columns:
+                nuevos_traslados = df_nuevos[df_nuevos['Estado_alumno_Original'].str.contains('TRASLADO', na=False, case=False)]['DNI'].nunique()
+                nuevos_convalidados = df_nuevos[(df_nuevos['Estado_alumno_Original'].str.contains('CONVALIDA', na=False, case=False)) | (df_nuevos['Convalidado'] == 'SI')]['DNI'].nunique()
+            else:
+                nuevos_traslados = 0
+                nuevos_convalidados = df_nuevos[df_nuevos['Convalidado'] == 'SI']['DNI'].nunique() if 'Convalidado' in df_nuevos.columns else 0
             
             año_actual = df_mes['Año'].iloc[0] if not df_mes.empty else periodo_real.split('-')[0]
             mes_nombre = df_mes['Mes_Nombre'].iloc[0] if not df_mes.empty else "N/A"
@@ -260,7 +318,7 @@ def process_data(input_csv, output_pregrado, output_posgrado):
                 'Gestion': df_prog['Gestion'].iloc[0],
                 'Modalidad_Agrupada': df_prog['Modalidad_Agrupada'].iloc[0],
                 'Nivel': df_prog['Nivel'].iloc[0] if not df_prog.empty else "Desconocido",
-                'Egresados': len(egresados_mes_actual),
+                'Concluyeron el Plan': len(egresados_mes_actual),
                 'Admitidos Matriculados': admitidos_matriculados,
                 'Nuevos Traslados': nuevos_traslados,
                 'Nuevos Convalidados': nuevos_convalidados,
@@ -309,5 +367,5 @@ def process_data(input_csv, output_pregrado, output_posgrado):
     print("Procesamiento completado exitosamente.")
 
 if __name__ == '__main__':
-    input_file = "base de datos de alumnos de pregrado.csv"
+    input_file = "base de datos de Pregrado hasta Junio 2026.csv"
     process_data(input_file, "Cuadro_Mando_Pregrado_Calculado.csv", "Cuadro_Mando_Posgrado_Calculado.csv")

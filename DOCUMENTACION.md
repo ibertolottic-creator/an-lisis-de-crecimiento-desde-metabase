@@ -188,7 +188,7 @@ db = { pregrado: [...], posgrado: [...] }               │
 |---|---|---|
 | **Mes** | Periodo mensual (Enero–Diciembre) | Etapa 1–12 del documento Word |
 | **Programa** | Nombre de la carrera o maestría | Fila individual del Word |
-| **Egresados** | Alumnos que completaron su plan de estudios este mes | Dato directo |
+| **Concluyeron el Plan** | Alumnos que completaron su plan de estudios este mes | Dato directo |
 | **No matriculados** | Alumnos activos que NO renovaron su matrícula este mes (deserción bruta) | Dato directo |
 | **Admitidos** | Postulantes que aprobaron el proceso de admisión (leads calificados) | Dato directo |
 | **Admitidos Matriculados** | Admitidos que efectivamente pagaron y se matricularon (ventas cerradas) | Dato directo |
@@ -204,8 +204,8 @@ db = { pregrado: [...], posgrado: [...] }               │
 |---|---|---|
 | **Pérdida de Conversión Comercial** | `Admitidos − Admitidos Matriculados` | Cuántos prospectos viables se cayeron en el último paso. Mide la "fuga del embudo" comercial. |
 | **Deserción Neta** | `No matriculados − Recuperados` | Saldo real del abandono. Si recuperas más de lo que pierdes, el resultado es negativo (bueno). |
-| **Brecha de Reemplazo** | `Egresados − Admitidos Matriculados` | Si es positivo, el programa pierde masa crítica porque egresan más de los que entran como nuevos. |
-| **Crecimiento Neto Estudiantil** | `(Adm.Mat. + Recuperados) − (No matriculados + Egresados)` | Balance final entre todo lo que entra y todo lo que sale. Pulso vital de crecimiento institucional. |
+| **Brecha de Reemplazo** | `Concluyeron el Plan − Admitidos Matriculados` | Si es positivo, el programa pierde masa crítica porque egresan más de los que entran como nuevos. |
+| **Crecimiento Neto Estudiantil** | `(Adm.Mat. + Recuperados) − (No matriculados + Concluyeron el Plan)` | Balance final entre todo lo que entra y todo lo que sale. Pulso vital de crecimiento institucional. |
 | **Balance de Retención** | `Recuperados − No matriculados` | Saldo neto de la gestión de fidelización en números absolutos. |
 
 ### 3.3 Indicadores Estratégicos Relativos (Tasas %)
@@ -248,9 +248,9 @@ Cada tarjeta es clickeable y abre un modal educativo con: fórmula, interpretaci
 | Gráfico | Tipo Chart.js | ¿Qué muestra? |
 |---|---|---|
 | **Embudo de Captación Comercial** | `bar` (horizontal) | Admitidos → Pagaron → Pérdida. Visualiza la fuga del embudo de ventas. |
-| **Dinámica de Flujo: Entradas vs Salidas** | `bar` (stacked) | Barras verdes (Nuevos + Recuperados) contra rojas (Egresados + No matriculados). |
+| **Dinámica de Flujo: Entradas vs Salidas** | `bar` (stacked) | Barras verdes (Nuevos + Recuperados) contra rojas (Concluyeron el Plan + No matriculados). |
 | **Composición de Matrícula** | `doughnut` | Distancia vs Presencial (solo Pregrado/Institucional). Muestra la cuenta regresiva de planes antiguos. |
-| **Brecha de Reemplazo** | `bar` | Ingresos nuevos vs Egresados. ¿Las ventas nuevas superan a los graduados? |
+| **Brecha de Reemplazo** | `bar` | Ingresos nuevos vs Concluyeron el Plan. ¿Las ventas nuevas superan a los graduados? |
 | **Captación vs Deserción Bruta** | `bar` | Nuevos vs No matriculados. El "Síndrome de la Cubeta Agujereada" (Leaky Bucket). |
 
 ### 4.3 Evolución Histórica (5 gráficos temporales)
@@ -305,7 +305,7 @@ Cada gráfico y KPI tiene un botón ℹ️ que abre un modal con 5 secciones:
 ### Esquema de la Hoja Google Sheets — Pestaña "Pregrado"
 
 ```
-| Mes | Programa | Egresados | No matrí. | Admitidos | Admitidos Matriculados | Recuperados |
+| Mes | Programa | Concluyeron el Plan | No matrí. | Admitidos | Admitidos Matriculados | Recuperados |
 | Matríc. regular a Distancia | Matríc. regular Presencial | Estudiantes matrí. TOTAL |
 | Alumnos en Asignaturas de 2 Meses |
 | Pérdida de Conversión Comercial(...) | Deserción Neta(...) | Brecha de Reemplazo(...) |

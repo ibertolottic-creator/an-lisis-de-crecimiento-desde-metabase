@@ -23,7 +23,7 @@ El sistema emplea un pipeline ETL (Extracción, Transformación y Carga) estruct
 - **Propósito:** 
   1. Limpiar e imputar datos nulos.
   2. Aplicar las reglas de matrícula universitaria.
-  3. Calcular métricas absolutas (Desertores, Nuevos, Egresados).
+  3. Calcular métricas absolutas (Desertores, Nuevos, Concluyeron el Plan).
   4. Generar la matriz histórica que servirá como entrada (Features) para los futuros algoritmos de Machine Learning.
 
 ### Capa 3: Modelo Predictivo (Machine Learning - Próxima Fase)
@@ -63,14 +63,14 @@ Un gran reto analítico es evitar registrar "Falsas Deserciones" cuando un alumn
 
 ### 2.4. Cálculos Mensuales (Operaciones de Conjuntos)
 Basado en el mes `t` y mes anterior `t-1`:
-- **Egresados:** `DNI` con la marca `Egresado = 'SI'` en el mes `t`.
-- **Desertores (No Matriculados):** `DNI` que estuvo matriculado activamente en `t-1`, NO está Egresado, y NO tiene matrícula activa en `t`.
+- **Concluyeron el Plan (Egresados Únicos):** `DNI` con la marca `Egresado = 'SI'` en el mes `t`. Para evitar duplicidades entre planes convalidados o simultáneos, cada alumno único se cuenta una sola vez en toda la historia, asignándolo a su último periodo y su último plan registrado (con prioridad en la modalidad a Distancia).
+- **Desertores (No Matriculados):** `DNI` que estuvo matriculado activamente en `t-1`, NO ha concluido el plan (no tiene registro histórico en "Concluyeron el Plan"), y NO tiene matrícula activa en `t`.
 - **Recuperados:** `DNI` que tiene historial de matrícula en el programa, estuvo ausente en `t-1`, pero reaparece activamente matriculado en `t`.
 
 ---
 
 ## 3. Próximos Pasos (Roadmap Técnico)
-1. **Fase Actual:** Actualizar la sintaxis de `etl_processor.py` para cumplir cabalmente con las Reglas 2.1, 2.2 y 2.3.
+1. **Fase Actual:** Actualizar la sintaxis de `etl_processor.py` para cumplir cabalmente con las Reglas 2.1, 2.2 y 2.3, además del filtro cronológico dinámico hasta junio 2026.
 2. **Validación:** Cruzar las salidas del CSV generado con los antiguos cuadros de mando `Cuadro_Mando_Pregrado_Actualizado.csv` para garantizar exactitud retroactiva.
 3. **Despliegue Local:** Probar el Dashboard en local asegurando alta fluidez con más de 100,000 filas.
 4. **Fase Predictiva:** Extraer el histórico del ETL para entrenar un Random Forest Classifier o XGBoost que asigne un "Score de Riesgo" mensual a cada DNI activo.
