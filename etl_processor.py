@@ -38,14 +38,26 @@ def extract_month_name(row):
     parts = period_sap.split('-')
     return parts[-1].capitalize() if len(parts) > 1 else period_sap.capitalize()
 
-def process_data(input_csv, output_pregrado, output_posgrado):
-    print(f"Leyendo datos desde {input_csv}...")
-    df = pd.read_csv(input_csv, dtype={
+def process_data(pregrado_csv, posgrado_csv, output_pregrado, output_posgrado):
+    print(f"Leyendo datos de Pregrado desde {pregrado_csv}...")
+    df_pre = pd.read_csv(pregrado_csv, dtype={
         'Matricula': str, 
         'DNI': str, 
         'Periodio_Admision': str, 
         'Ultima_inscripcion': str
     })
+    df_pre['Nivel_Origen'] = 'Pregrado'
+
+    print(f"Leyendo datos de Posgrado desde {posgrado_csv}...")
+    df_pos = pd.read_csv(posgrado_csv, dtype={
+        'Matricula': str, 
+        'DNI': str, 
+        'Periodio_Admision': str, 
+        'Ultima_inscripcion': str
+    })
+    df_pos['Nivel_Origen'] = 'Posgrado'
+
+    df = pd.concat([df_pre, df_pos], ignore_index=True)
     
     # Normalización de nombres de columnas para eliminar tildes y caracteres especiales
     import unicodedata
@@ -115,7 +127,7 @@ def process_data(input_csv, output_pregrado, output_posgrado):
     if 'Estado_alumno_Original' in df_activos.columns:
         agg_dict['Estado_alumno_Original'] = 'first'
     
-    student_month = df_activos.groupby(['Periodo_Real', 'Año', 'Mes_Nombre', 'Codigo_Plan_SAP', 'Programa', 'Programa_Base', 'DNI']).agg(agg_dict).reset_index()
+    student_month = df_activos.groupby(['Periodo_Real', 'Año', 'Mes_Nombre', 'Codigo_Plan_SAP', 'Programa', 'Programa_Base', 'DNI', 'Nivel_Origen']).agg(agg_dict).reset_index()
     student_month.rename(columns={'Asignatura': 'Cursos_Mes'}, inplace=True)
 
     meses_orden = sorted(student_month['Periodo_Real'].dropna().unique())
@@ -154,9 +166,7 @@ def process_data(input_csv, output_pregrado, output_posgrado):
         lambda x: pd.Series(get_metadata(x['Codigo_Plan_SAP'], x['Programa'])), axis=1
     )
     
-    student_month['Nivel'] = student_month['Programa_Base'].apply(
-        lambda x: 'Posgrado' if 'MAESTR' in str(x).upper() else 'Pregrado'
-    )
+    student_month['Nivel'] = student_month['Nivel_Origen']
     
     # Extract courses metrics globally before loop
     print("Calculando asignaturas con mayor reprobación y deserción...")
@@ -367,5 +377,6 @@ def process_data(input_csv, output_pregrado, output_posgrado):
     print("Procesamiento completado exitosamente.")
 
 if __name__ == '__main__':
-    input_file = "base de datos de Pregrado hasta Junio 2026.csv"
-    process_data(input_file, "Cuadro_Mando_Pregrado_Calculado.csv", "Cuadro_Mando_Posgrado_Calculado.csv")
+    pregrado_file = "Base de datos historial academico de alumnos de pregrado - Julio.csv"
+    posgrado_file = "base de datos de historial académico de alumnos de posgrado.csv"
+    process_data(pregrado_file, posgrado_file, "Cuadro_Mando_Pregrado_Calculado.csv", "Cuadro_Mando_Posgrado_Calculado.csv")

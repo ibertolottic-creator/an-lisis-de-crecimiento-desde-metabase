@@ -1,60 +1,48 @@
-# Estado del Proyecto: Sistema de Análisis de Deserción y Crecimiento (Pregrado)
+# Estado del Proyecto: Sistema de Análisis de Deserción y Crecimiento (USMP)
 
-**Fecha de Actualización:** 24 de Junio de 2026
-**Objetivo Principal:** Optimizar el agrupamiento de estudiantes y refinar la taxonomía de retención y deserción, garantizando la trazabilidad longitudinal a través del Código SAP.
+**Fecha de Última Actualización:** 8 de Julio de 2026  
+**Objetivo Principal:** Mantener un pipeline de datos robusto y un dashboard gerencial unificado para el análisis longitudinal de retención, crecimiento y riesgo académico de los alumnos de Pregrado y Posgrado de la USMP Virtual.
 
 ---
 
-## 1. Hitos Alcanzados en la Última Sesión
+## 1. Hitos Alcanzados en la Sesión de Hoy (Julio 2026)
 
-### 1.1. Actualización de Base de Datos y Límite Cronológico
-* **Nueva Base de Datos:** Se actualizó el origen a `base de datos de Pregrado hasta Junio 2026.csv`.
-* **Filtro Temporal:** Se limitaron los cálculos y el dashboard estrictamente hasta el periodo de **Junio 2026**, descartando registros posteriores o incompletos.
+### 1.1. Actualización General a Julio 2026
+* **Datos Actualizados:** Se procesaron e integraron de forma exitosa las bases de datos actualizadas al período de **Julio 2026**.
+* **Límite Temporal Automático:** El pipeline de datos detecta el límite cronológico en base al mes actual y filtra de forma inteligente registros incompletos o adelantados.
 
-### 1.2. Lógica de "Concluyeron el Plan" (Egresados Únicos Dedup)
-* **Alumnos Únicos:** Se implementó una regla de negocio para evitar inflar el conteo de egresados. Ahora cada DNI se cuenta **una sola vez** en el historial.
-* **Priorización de Plan a Distancia:** Si un alumno ha estado registrado en varios planes convalidados o simultáneos, el algoritmo de deduplicación del ETL asigna al egresado a su último periodo activo y prioritariamente a su plan en modalidad a distancia.
-* **Renombre General:** Se cambió el nombre de la métrica y columna "Egresados" a **"Concluyeron el Plan"** en todos los componentes del sistema (ETL, CSVs generados, gráficos interactivos y KPIs en Streamlit).
+### 1.2. Pipeline de Datos Concurrente (Pregrado + Posgrado)
+* **Procesamiento Unificado:** Se actualizó `etl_processor.py` para leer y procesar simultáneamente las bases de datos de Pregrado (`Base de datos historial academico de alumnos de pregrado - Julio.csv`) y Posgrado (`base de datos de historial académico de alumnos de posgrado.csv`).
+* **Seguridad en Nivel de Origen:** El campo `Nivel` se asigna directamente según el archivo origen (`Pregrado` o `Posgrado`), erradicando falsos positivos que dependían de la coincidencia del término `"MAESTR"` en el nombre del programa.
 
-### 1.3. Arquitectura de Agrupación por Código SAP
-* **Cambio Estructural (ETL):** El ancla de procesamiento pasó del nombre textual (`Programa_Base`) al **Código Plan SAP** (`Codigo_Plan_SAP`).
-* **Resolución de Conflictos:** Esto solucionó definitivamente el cruce de programas con nombres idénticos pero naturalezas distintas (ej. Derecho Regular vs. Derecho PAT a Distancia).
-* **Escalabilidad:** El sistema detecta los planes únicos con precisión, asegurando que ninguna cohorte de estudiantes quede invisibilizada o fusionada por error.
+### 1.3. Dashboard Unificado y Selector en Filtros Principales (`app.py`)
+* **Selector Sidebar:** Se integró un control de radio dinámico en los **Filtros Principales** de la barra lateral para alternar entre **Pregrado** y **Posgrado**.
+* **Visualizaciones Homólogas:** Ambas opciones cargan exactamente la misma estructura de pestañas, KPIs, gráficos de balance y evolución de matrícula, adaptándose dinámicamente a los datos de cada nivel.
+* **Filtrado en Caliente:** Los datasets de cursos reprobados (`Asignaturas_Desaprobados_Historico.csv`) y longitudinales de ML (`Dataset_Longitudinal_ML.csv`) se filtran en caliente según el nivel seleccionado para evitar contaminación de métricas en análisis globales.
 
-### 1.4. Jerarquía Académica Multidimensional
-Se han implementado y estabilizado las siguientes dimensiones en el ETL, disponibles como filtros jerárquicos interactivos en `app.py`:
-1. **Facultad:** Educación, Derecho, Economía, Contabilidad y Finanzas, CC. Administrativas y RRHH, Medicina Humana.
-2. **Gestión Operativa:** Separación clara entre planes **Propios (Sin Partner)** y planes **Con Partner (AP)**.
-3. **Modalidad Agrupada:** Distancia, Presencial (Híbrido) y Presencial Regular.
-
-### 1.5. Nueva Taxonomía de Permanencia (Sustituye a "Retenidos / Recuperados")
-Se ha diseñado una nueva categorización para entender el comportamiento de continuidad de la matrícula:
-* 🟢 **Permanentes Continuos (0-1m):** Alumnos matriculados sin interrupción o que regresan tras máximo 1 mes de ausencia (Riesgo 1m recuperado).
-* 🟡 **Permanentes Incontinuos (2-5m):** Alumnos que interrumpen sus estudios entre 2 y 5 meses y logran ser recuperados antes de considerarse desertores tardíos.
-* 🟤 **Reincorporados (6m+):** Alumnos que regresan al sistema tras una larga ausencia superior a un semestre.
-
-### 1.6. Rediseño Analítico del Dashboard (`app.py`)
-* **Control de Caché Robusto:** Se integró la marca de tiempo de modificación del archivo (`mtime`) para garantizar que la interfaz siempre lea la última versión generada por el ETL.
-* **Seguridad de Tipos:** Conversión forzada de variables a texto puro antes de los ordenamientos (`sorted`), erradicando `TypeError`.
-* **Dinámica de Crecimiento (Gráfico 1):** Las *Entradas* calculan a los **Nuevos** y a todos los **Recuperados**, balanceando el *Crecimiento Neto* contra las *Salidas* (Concluyeron el Plan y Riesgo 1m).
-* **Balance de Matrícula (Gráfico 2):** Vista consolidada de pérdida vs. masa retenida. Para mantener la limpieza visual, la leyenda de *Concluyeron el Plan (Salidas)* se integró en lugar de "Egresados".
-
+### 1.4. Corrección en Matriz de Riesgo (Cruce de Programas)
+* **Normalización de Nombres:** Se implementó `clean_program_name` al realizar el cruce de asignaturas desaprobadas con la tasa de deserción, incrementando los programas emparejados en la correlación de 7 a 11 en pregrado.
 
 ---
 
 ## 2. Componentes Técnicos Activos
 
-* **`etl_processor.py`**: Corazón lógico. Toma la base sucia en CSV, aplica las reglas de agrupamiento `Codigo_Plan_SAP`, calcula las nuevas variables de retención interrumplida, y exporta tablas agregadas y un dataset plano.
-* **`app.py`**: Interfaz de Streamlit. Carga las agregaciones y renderiza el árbol de filtros en la barra lateral con manejo seguro de excepciones y gráficos interactivos mediante `plotly.graph_objects`.
-* **Archivos Intermedios**:
-  * `Cuadro_Mando_Pregrado_Calculado.csv` (Tablero de mando)
-  * `Dataset_Longitudinal_ML.csv` (Base lista para IA / Machine Learning)
-  * `Asignaturas_Desaprobados_Historico.csv` (Métrica de calidad académica por curso)
+* **`etl_processor.py`**: Pipeline principal en Pandas. Lee las bases en CSV, calcula métricas de cohorte y egresados deduplicados, clasifica las permanencias e incompresiones, y exporta datos consolidados.
+* **`app.py`**: Interfaz de visualización interactiva basada en Streamlit y Plotly. Permite alternar de manera fluida entre Pregrado y Posgrado.
+* **`config/settings.py`**: Configuración centralizada de umbrales, notas aprobatorias, mapeos de nombres de programas y paleta de colores corporativos.
+* **Archivos Consolidados de Datos**:
+  * `Cuadro_Mando_Pregrado_Calculado.csv` (Tablero de pregrado)
+  * `Cuadro_Mando_Posgrado_Calculado.csv` (Tablero de posgrado)
+  * `Dataset_Longitudinal_ML.csv` (Base de datos transaccional-longitudinal unificada para Machine Learning)
+  * `Asignaturas_Desaprobados_Historico.csv` (Historial académico de cursos críticos)
 
 ---
 
-## 3. Próximos Pasos Recomendados
+## 3. Próximos Pasos
 
-1. **Dashboard de Posgrado:** Extender las mismas reglas de negocio (código SAP y jerarquía) para los programas de maestrías y especializaciones.
-2. **Modelo Predictivo de Riesgo:** Aprovechar el `Dataset_Longitudinal_ML.csv` recién refinado para entrenar un modelo temprano de alerta utilizando el número de ausencias (`prev_aus`), la modalidad y el rendimiento en asignaturas filtro.
-3. **Automatización de Ejecución:** Si el CSV base (`base de datos de alumnos de pregrado.csv`) se actualiza periódicamente, recomendar empaquetar el `etl_processor.py` en una tarea cronometrada o webhook conectada al sistema central de la universidad.
+1. **Construcción y Despliegue de Modelos de Machine Learning**:
+   - Entrenar modelos predictivos (Random Forest o XGBoost) utilizando la base enriquecida de `Dataset_Longitudinal_ML.csv` para predecir el score individual de deserción y el reingreso de alumnos.
+2. **Dockerización del Sistema**:
+   - Validar que el `Dockerfile` configure correctamente el entorno virtual local antes de realizar el despliegue del dashboard en Google Cloud Run.
+3. **Automatización del Ingestion Pipeline**:
+   - Vincular la carga mensual de datos a un proceso automatizado (ej. API de Metabase) para omitir la carga manual de archivos de texto CSV.

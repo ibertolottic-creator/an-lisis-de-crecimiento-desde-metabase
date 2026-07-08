@@ -1,76 +1,60 @@
 # Arquitectura del Sistema de Análisis de Crecimiento, Deserción y Machine Learning (USMP)
 
-**Fecha de Actualización:** Mayo 2026
+**Fecha de Última Actualización:** 8 de Julio de 2026  
 **Tecnologías:** Python 3 (Pandas, Numpy), Streamlit, Plotly, SQL.
 
-Este documento técnico describe la arquitectura, el flujo de datos y las reglas estrictas de negocio del nuevo sistema de análisis de datos. Reemplaza al anterior sistema basado en Google Apps Script, sentando las bases tecnológicas necesarias para el despliegue futuro de modelos predictivos de Machine Learning.
+Este documento técnico describe la arquitectura, el flujo de datos y las reglas de negocio del sistema de análisis de datos de la USMP Virtual. El sistema procesa de forma integrada el pipeline analítico para **Pregrado** y **Posgrado**, sentando las bases tecnológicas necesarias para el consumo analítico y el entrenamiento de modelos predictivos de Machine Learning.
 
 ---
 
 ## 1. Visión General y Flujo de Datos (Data Pipeline)
 
-El sistema emplea un pipeline ETL (Extracción, Transformación y Carga) estructurado en 4 capas lógicas. Está diseñado para ser escalable y modular, permitiendo que otros equipos (Sistemas, Ciencia de Datos) o inteligencias artificiales puedan consumir los datos.
+El sistema emplea un pipeline ETL (Extracción, Transformación y Carga) y visualización estructurado en 4 capas lógicas.
 
 ### Capa 1: Extracción (Data Source)
 - **Origen:** Metabase / SAP.
-- **Consulta Unificada:** Toda la extracción se realiza a través de un único query SQL denominado `"Datos para Análisis de Crecimiento y deserción v2026"`.
 - **Granularidad:** Nivel transaccional profundo: *DNI Alumno -> Asignatura -> Estado_Curso -> Mes/Periodo SAP*.
-- **Formato:** Extracción periódica en CSV (`base de datos de alumnos de pregrado.csv`).
+- **Formatos de Entrada:** 
+  - Pregrado: `Base de datos historial academico de alumnos de pregrado - Julio.csv`
+  - Posgrado: `base de datos de historial académico de alumnos de posgrado.csv`
 
-### Capa 2: Procesamiento y Feature Engineering (Data Engineering / ETL)
+### Capa 2: Procesamiento y Feature Engineering (ETL)
 - **Motor Principal:** Archivo `etl_processor.py`.
-- **Lógica:** Implementa teoría de conjuntos (Set Theory) con Pandas para cruzar los DNIs mes a mes.
-- **Propósito:** 
-  1. Limpiar e imputar datos nulos.
-  2. Aplicar las reglas de matrícula universitaria.
-  3. Calcular métricas absolutas (Desertores, Nuevos, Concluyeron el Plan).
-  4. Generar la matriz histórica que servirá como entrada (Features) para los futuros algoritmos de Machine Learning.
+- **Lógica:** Implementa procesamiento conjunto en Pandas para ambas bases de datos. Etiqueta la dimensión `Nivel` dinámicamente según el archivo fuente y calcula de manera segura egresados unificados y retención de cohortes.
+- **Salidas Generadas:**
+  - `Cuadro_Mando_Pregrado_Calculado.csv`
+  - `Cuadro_Mando_Posgrado_Calculado.csv`
+  - `Dataset_Longitudinal_ML.csv` (Para modelos de IA)
+  - `Asignaturas_Desaprobados_Historico.csv` (Cursos críticos)
 
-### Capa 3: Modelo Predictivo (Machine Learning - Próxima Fase)
-- **Objetivo:** Calcular la probabilidad individual de deserción de un alumno para el siguiente mes `t+1`, basándose en su comportamiento histórico hasta el mes `t`.
-- **Tecnología Proyectada:** `scikit-learn`, `XGBoost` o `LightGBM`.
-- **Variables Potenciales (Features):** Frecuencia de cursos reprobados, cambios de plan (traslados internos), proporción de asignaturas convalidadas vs cursadas, antigüedad en el programa.
-
-### Capa 4: Presentación y Visualización (Dashboard)
+### Capa 3: Visualización e Interfaz (Dashboard Streamlit)
 - **Motor Principal:** Archivo `app.py`.
-- **Tecnología:** Streamlit (para web interactiva) y Plotly (para visualización de gráficos complejos como Waterfall y de evolución temporal).
+- **Características:**
+  - Selector dinámico de nivel académico (**Pregrado** / **Posgrado**) incorporado en la barra lateral.
+  - Filtros en caliente para aislar materias y datos predictivos por nivel.
+  - Gráficos interactivos de dinámica de crecimiento y balance mensual.
+
+### Capa 4: Modelo Predictivo (Machine Learning - En Desarrollo)
+- **Propósito:** Calcular la probabilidad individual de retorno/deserción de un alumno basándose en su rendimiento académico, ausencias e inestabilidad (traslados).
 
 ---
 
 ## 2. Reglas de Negocio Estrictas
 
-Para asegurar la coherencia de los indicadores gerenciales, el ETL aplica rigurosamente las siguientes reglas acordadas:
-
 ### 2.1. Matrícula Activa (`Estado_curso`)
-No todos los registros en SAP significan que un alumno está estudiando en un mes específico.
-- **Estudiante Activo:** Un DNI se contabiliza como matriculado en un mes **solo si** posee al menos una asignatura con `Estado_curso = 'CURSADO'`.
-- **Filtro de Trámites:** Si el DNI en ese mes únicamente tiene asignaturas con `Estado_curso = 'CONVALIDADO'`, el sistema lo ignora como matrícula activa de ese mes (es solo un papeleo histórico o trámite).
+Un DNI se contabiliza como matriculado en un mes **solo si** posee al menos una asignatura en ese periodo con `Estado_curso = 'CURSADO'`.
 
-### 2.2. Clasificación de Alumnos Nuevos (Admitidos Matriculados)
-*Nota: Se omite formalmente el uso de la palabra "Cachimbo".*
-- **Regla Estricta:** Un alumno se clasifica como "Admitido Matriculado" en un mes determinado **solo si** es la **primera vez en toda la historia** que su DNI registra una matrícula activa (`CURSADO`) dentro de ese programa.
-- Si su primera aparición histórica es únicamente con cursos `'CONVALIDADO'`, no es un alumno nuevo, sino un traslado/convalidación externa.
+### 2.2. Clasificación de Alumnos Nuevos
+Un alumno es "Admitido Matriculado" en un mes determinado **solo si** es la **primera vez en toda la historia** que su DNI registra una matrícula activa (`CURSADO`) en ese programa.
 
-### 2.3. Normalización de Programas y Traslados Internos
-Un gran reto analítico es evitar registrar "Falsas Deserciones" cuando un alumno simplemente cambia de modalidad (ej. pasa de presencial a distancia) dentro de la misma carrera. Se aborda desde dos ópticas:
-
-- **Opción A (Dashboard Gerencial Principal - `Programa_Base`):**
-  El ETL limpia el nombre del programa, borrando sufijos como `"- (A DISTANCIA AP)"`, `"- (70/30 AP)"` o `"- (2DA ESPECIALIDAD)"`. 
-  *Efecto:* Todas las modalidades de Contabilidad se vuelven una sola gran carrera. Si un alumno cambia de modalidad, para el Dashboard gerencial es transparente y el alumno figura con matrícula continua (sin deserción).
-
-- **Opción B (Análisis Granular e Inteligencia Artificial - `Código_Plan_SAP`):**
-  El ETL conserva intacto el `Código_Plan_SAP`. Puesto que el código es inmutable, incluso si el nombre legal de la carrera cambia con los años (ej. de "Educación Histórico" a "Primaria"), el código unifica a esa cohorte. Si un alumno cambia de `Código_Plan_SAP`, en el procesamiento a bajo nivel esto se registra como un **Traslado Saliente** (y no como una deserción neta), permitiendo a los algoritmos predictivos detectar inestabilidad académica sin distorsionar el macro-dashboard.
-
-### 2.4. Cálculos Mensuales (Operaciones de Conjuntos)
-Basado en el mes `t` y mes anterior `t-1`:
-- **Concluyeron el Plan (Egresados Únicos):** `DNI` con la marca `Egresado = 'SI'` en el mes `t`. Para evitar duplicidades entre planes convalidados o simultáneos, cada alumno único se cuenta una sola vez en toda la historia, asignándolo a su último periodo y su último plan registrado (con prioridad en la modalidad a Distancia).
-- **Desertores (No Matriculados):** `DNI` que estuvo matriculado activamente en `t-1`, NO ha concluido el plan (no tiene registro histórico en "Concluyeron el Plan"), y NO tiene matrícula activa en `t`.
-- **Recuperados:** `DNI` que tiene historial de matrícula en el programa, estuvo ausente en `t-1`, pero reaparece activamente matriculado en `t`.
+### 2.3. Normalización de Programas
+- **Dashboard Gerencial (`Programa_Base`):** El ETL limpia sufijos como `(A DISTANCIA AP)` o `(70/30 AP)` para unificar las modalidades y evitar falsas deserciones al cambiar de modalidad dentro de una carrera.
+- **Análisis de Machine Learning (`Código_Plan_SAP`):** Se mantiene el código SAP inmutable para dar trazabilidad a los traslados y cambios entre cohortes.
 
 ---
 
-## 3. Próximos Pasos (Roadmap Técnico)
-1. **Fase Actual:** Actualizar la sintaxis de `etl_processor.py` para cumplir cabalmente con las Reglas 2.1, 2.2 y 2.3, además del filtro cronológico dinámico hasta junio 2026.
-2. **Validación:** Cruzar las salidas del CSV generado con los antiguos cuadros de mando `Cuadro_Mando_Pregrado_Actualizado.csv` para garantizar exactitud retroactiva.
-3. **Despliegue Local:** Probar el Dashboard en local asegurando alta fluidez con más de 100,000 filas.
-4. **Fase Predictiva:** Extraer el histórico del ETL para entrenar un Random Forest Classifier o XGBoost que asigne un "Score de Riesgo" mensual a cada DNI activo.
+## 3. Roadmap Técnico
+
+1. **Entrenamiento de Modelos Predictivos:** Utilizar el consolidado de `Dataset_Longitudinal_ML.csv` para entrenar el modelo de Random Forest incorporado en el dashboard.
+2. **Publicación y Dockerización:** Preparar la imagen Docker para subir el sistema a producción en Google Cloud Run.
+3. **Automatización Webhook:** Automatizar la llamada al ETL en la nube cuando se publiquen nuevas extracciones en el repositorio o la base de datos central.

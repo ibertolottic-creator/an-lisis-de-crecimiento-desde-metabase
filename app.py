@@ -10,9 +10,21 @@ st.set_page_config(page_title="Dashboard Académico Avanzado", layout="wide", in
 st.title("📊 Sistema de Análisis Estratégico y Deserción - USMP")
 st.markdown("Dashboard interactivo para visualizar métricas clave y factores de riesgo para Machine Learning.")
 
+import re
+
+def clean_program_name(name):
+    if not isinstance(name, str):
+        return str(name)
+    name = re.sub(r'\s*-\s*\(A DISTANCIA AP\)', '', name, flags=re.IGNORECASE)
+    name = re.sub(r'\s*-\s*\(70/30 AP\)', '', name, flags=re.IGNORECASE)
+    name = re.sub(r'\s*-\s*\(2DA ESPECIALIDAD\)', '', name, flags=re.IGNORECASE)
+    name = re.sub(r'\s*\(A DISTANCIA\)', '', name, flags=re.IGNORECASE)
+    name = re.sub(r'\s*\(PAT A DISTANCIA\)', '', name, flags=re.IGNORECASE)
+    name = re.sub(r'\s*-\s*HISTORICO', '', name, flags=re.IGNORECASE)
+    return name.strip()
+
 @st.cache_data
-def load_data(mtime):
-    file_path = "Cuadro_Mando_Pregrado_Calculado.csv"
+def load_data(file_path, mtime):
     if os.path.exists(file_path):
         df = pd.read_csv(file_path)
         
@@ -83,9 +95,16 @@ def load_longitudinal_data(mtime):
         return pd.read_csv(file_path, low_memory=False)
     return pd.DataFrame()
 
-file_path = "Cuadro_Mando_Pregrado_Calculado.csv"
+st.sidebar.header("⚙️ Filtros Principales")
+nivel_seleccionado = st.sidebar.radio("Nivel Académico", ["Pregrado", "Posgrado"], index=0)
+
+if nivel_seleccionado == "Pregrado":
+    file_path = "Cuadro_Mando_Pregrado_Calculado.csv"
+else:
+    file_path = "Cuadro_Mando_Posgrado_Calculado.csv"
+
 mtime = os.path.getmtime(file_path) if os.path.exists(file_path) else 0
-df = load_data(mtime)
+df = load_data(file_path, mtime)
 
 file_path_cursos = "Asignaturas_Desaprobados_Historico.csv"
 mtime_cursos = os.path.getmtime(file_path_cursos) if os.path.exists(file_path_cursos) else 0
@@ -95,11 +114,16 @@ file_path_long = "Dataset_Longitudinal_ML.csv"
 mtime_long = os.path.getmtime(file_path_long) if os.path.exists(file_path_long) else 0
 df_long = load_longitudinal_data(mtime_long)
 
+if not df.empty:
+    programas_base_nivel = set(df['Programa'].apply(clean_program_name).unique())
+    if not df_cursos.empty:
+        df_cursos = df_cursos[df_cursos['Programa_Base'].apply(clean_program_name).isin(programas_base_nivel)]
+    if not df_long.empty:
+        df_long = df_long[df_long['Nivel'] == nivel_seleccionado]
+
 if df.empty:
-    st.warning("No se encontraron datos. Ejecuta `python etl_processor.py` primero.")
+    st.warning(f"No se encontraron datos para {nivel_seleccionado}. Ejecuta `python etl_processor.py` primero.")
 else:
-    st.sidebar.header("⚙️ Filtros Principales")
-    
     años_disponibles = sorted(df['Año'].unique().tolist())
     años_seleccionados = st.sidebar.multiselect("Seleccionar Año(s)", años_disponibles, default=años_disponibles[-1:])
     
@@ -787,7 +811,8 @@ else:
 
             # 3. Datos Académicos (Limpiar nombres para asegurar el merge)
             df_acad_base = df_cursos[df_cursos['Periodo_Real'].isin(periodos_mats)].copy()
-            df_acad_base['Programa_Base'] = df_acad_base['Programa_Base'].str.strip()
+            df_acad_base = df_cursos[df_cursos['Periodo_Real'].isin(periodos_mats)].copy()
+            df_acad_base['Programa_Base'] = df_acad_base['Programa_Base'].apply(clean_program_name)
             df_acad = df_acad_base.groupby('Programa_Base').agg({
                 'Desaprobado': 'sum',
                 'Total_Alumnos': 'sum'
@@ -796,15 +821,15 @@ else:
             
             # 4. Datos Deserción (Limpiar nombres para asegurar el merge)
             df_des_base = df_f_matrix[df_f_matrix['Periodo_Real'].isin(periodos_mats)].copy()
-            df_des_base['Programa'] = df_des_base['Programa'].str.strip()
-            df_des = df_des_base.groupby('Programa').agg({
+            df_des_base['Programa_Base'] = df_des_base['Programa'].apply(clean_program_name)
+            df_des = df_des_base.groupby('Programa_Base').agg({
                 'Riesgo Deserción (1m)': 'sum',
                 'Estudiantes matrí. TOTAL': 'mean'
             }).reset_index()
             df_des['Tasa_Deserción'] = (df_des['Riesgo Deserción (1m)'] / df_des['Estudiantes matrí. TOTAL']) * 100
             
             # 5. Merge por nombre limpio
-            df_matrix = pd.merge(df_acad, df_des, left_on='Programa_Base', right_on='Programa')
+            df_matrix = pd.merge(df_acad, df_des, on='Programa_Base')
             
             fig_matrix = px.scatter(df_matrix, x='Tasa_Reprobacion', y='Tasa_Deserción',
                                     size='Estudiantes matrí. TOTAL', color='Tasa_Deserción',
