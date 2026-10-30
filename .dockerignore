@@ -1,22 +1,25 @@
-# Ignorar carpetas de control de versiones y entornos virtuales
 .git
 .gitignore
+.gcloudignore
 __pycache__
 venv
 .venv
 env
 .env
-
-# Ignorar archivos de configuración de IDEs
 .vscode
 .idea
-
-# Ignorar archivos temporales y de sistema
 *.pyc
 *.pyo
 *.pyd
 .DS_Store
 Thumbs.db
 
-# Ignorar carpeta de scripts de apoyo para reducir el tamaño de la imagen (opcional)
-# scratch/
+# Ignorar bases de datos crudas pesadas para aligerar la imagen Docker
+base de datos*.csv
+Base de datos*.csv
+query_result*.csv
+data/
+*.xlsx
+*.zip
+*.rar
+*.pdf

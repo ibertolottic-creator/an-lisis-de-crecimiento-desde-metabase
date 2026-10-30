@@ -22,13 +22,27 @@ MES_MAP = {
     'NOVIEMBRE': '11', 'DICIEMBRE': '12'
 }
 
+MES_NUM_TO_NOMBRE = {
+    1: 'Enero', 2: 'Febrero', 3: 'Marzo', 4: 'Abril', 5: 'Mayo', 6: 'Junio',
+    7: 'Julio', 8: 'Agosto', 9: 'Setiembre', 10: 'Octubre', 11: 'Noviembre', 12: 'Diciembre'
+}
+
 def extract_period(row, year_col):
     year = str(row[year_col]).strip()
     period_sap = str(row['Periodo_SAP']).strip()
-    if year == 'nan' or period_sap == 'nan':
+    if year == 'nan' or period_sap == 'nan' or not period_sap:
         return None
     
     parts = period_sap.split('-')
+    # Regla 1: Dos primeras siglas numéricas - 50 (ej. 54-ABRIL -> 54 - 50 = 04)
+    prefix = parts[0].strip()
+    if prefix.isdigit():
+        val = int(prefix)
+        if 51 <= val <= 62:
+            mes_num = f"{val - 50:02d}"
+            return f"{year}-{mes_num}"
+    
+    # Regla fallback: nombre del mes después del guión
     mes_str = parts[-1].upper() if len(parts) > 1 else period_sap.upper()
     mes_num = MES_MAP.get(mes_str, '00')
     return f"{year}-{mes_num}"
@@ -36,7 +50,24 @@ def extract_period(row, year_col):
 def extract_month_name(row):
     period_sap = str(row['Periodo_SAP']).strip()
     parts = period_sap.split('-')
-    return parts[-1].capitalize() if len(parts) > 1 else period_sap.capitalize()
+    if len(parts) > 1:
+        return parts[-1].capitalize()
+    if period_sap.isdigit():
+        val = int(period_sap)
+        if 51 <= val <= 62:
+            return MES_NUM_TO_NOMBRE.get(val - 50, period_sap)
+    return period_sap.capitalize()
+
+def add_months_to_period(period_str, n_months):
+    """Calcula el periodo YYYY-MM sumando n_months cronológicamente."""
+    try:
+        y, m = int(period_str[:4]), int(period_str[5:7])
+        total_m = (y * 12 + (m - 1)) + n_months
+        new_y = total_m // 12
+        new_m = (total_m % 12) + 1
+        return f"{new_y}-{new_m:02d}", str(new_y), new_m
+    except Exception:
+        return None, None, None
 
 def process_data(pregrado_csv, posgrado_csv, output_pregrado, output_posgrado):
     print(f"Leyendo datos de Pregrado desde {pregrado_csv}...")
@@ -82,6 +113,84 @@ def process_data(pregrado_csv, posgrado_csv, output_pregrado, output_posgrado):
     df_activos['Periodo_Real'] = df_activos.apply(lambda row: extract_period(row, year_col), axis=1)
     df_activos['Mes_Nombre'] = df_activos.apply(extract_month_name, axis=1)
     df_activos['Año'] = df_activos[year_col]
+    
+    # Cargar catálogo de Meses_Curso desde data/Bases de datos octubre 2026 si existe
+    oct_dir = os.path.join("data", "Bases de datos octubre 2026")
+    cat_meses = {}
+    if os.path.exists(oct_dir):
+        for fname in os.listdir(oct_dir):
+            if fname.endswith('.csv'):
+                fpath = os.path.join(oct_dir, fname)
+                try:
+                    cols_head = pd.read_csv(fpath, nrows=2).columns.tolist()
+                    needed = [c for c in cols_head if 'meses_curso' in c.lower() or 'asignatura' in c.lower()]
+                    if any('meses_curso' in c.lower() for c in needed):
+                        df_sample = pd.read_csv(fpath, usecols=needed, low_memory=False)
+                        meses_col = [c for c in df_sample.columns if 'meses_curso' in c.lower()][0]
+                        cod_col = [c for c in df_sample.columns if 'asignatura' in c.lower() and 'sap' in c.lower()]
+                        asig_col = [c for c in df_sample.columns if c.lower() == 'asignatura']
+                        multi = df_sample[pd.to_numeric(df_sample[meses_col], errors='coerce') >= 2]
+                        for _, r in multi.iterrows():
+                            if cod_col:
+                                cod = str(r.get(cod_col[0], '')).split('.')[0].lstrip('0')
+                                if cod and cod != 'nan':
+                                    cat_meses[cod] = int(r[meses_col])
+                            if asig_col:
+                                asig = str(r.get(asig_col[0], '')).strip().upper()
+                                if asig and asig != 'NAN':
+                                    cat_meses[asig] = int(r[meses_col])
+                except Exception:
+                    pass
+
+    # Detección y normalización de Meses_Curso
+    meses_col = None
+    for c in df_activos.columns:
+        if 'meses_curso' in c.lower() or 'mesescurso' in c.lower():
+            meses_col = c
+            break
+            
+    if meses_col:
+        df_activos['Meses_Curso'] = pd.to_numeric(df_activos[meses_col], errors='coerce').fillna(1).astype(int)
+    else:
+        df_activos['Meses_Curso'] = 1
+
+    # Enriquecer con el catálogo maestro para todos los años históricos (incluyendo 2026)
+    if cat_meses:
+        cod_col = [c for c in df_activos.columns if 'asignatura' in c.lower() and 'sap' in c.lower()]
+        asig_col = [c for c in df_activos.columns if c.lower() == 'asignatura']
+        if cod_col:
+            cod_norm = df_activos[cod_col[0]].dropna().astype(str).str.split('.').str[0].str.lstrip('0')
+            mapped_cod = cod_norm.map(cat_meses)
+            df_activos['Meses_Curso'] = df_activos['Meses_Curso'].where(df_activos['Meses_Curso'] >= 2, mapped_cod.fillna(1).astype(int))
+        if asig_col:
+            asig_norm = df_activos[asig_col[0]].dropna().astype(str).str.strip().str.upper()
+            mapped_asig = asig_norm.map(cat_meses)
+            df_activos['Meses_Curso'] = df_activos['Meses_Curso'].where(df_activos['Meses_Curso'] >= 2, mapped_asig.fillna(1).astype(int))
+
+    # Proyección activa de cursos de 2 o más meses (evita falsas deserciones durante la cursada)
+    multi_meses = df_activos[df_activos['Meses_Curso'] >= 2]
+    if not multi_meses.empty:
+        print(f"Detectadas {len(multi_meses)} matrículas con duración >= 2 meses. Proyectando vigencia activa...")
+        extension_rows = []
+        for _, row in multi_meses.iterrows():
+            duracion = int(row['Meses_Curso'])
+            base_periodo = row['Periodo_Real']
+            if not base_periodo:
+                continue
+            for offset in range(1, duracion):
+                next_period, next_year, next_m = add_months_to_period(base_periodo, offset)
+                if next_period:
+                    r_ext = row.copy()
+                    r_ext['Periodo_Real'] = next_period
+                    r_ext['Año'] = next_year
+                    r_ext['Mes_Nombre'] = MES_NUM_TO_NOMBRE.get(next_m, row['Mes_Nombre'])
+                    r_ext['Es_Extension_Curso'] = True
+                    extension_rows.append(r_ext)
+
+        if extension_rows:
+            df_extensiones = pd.DataFrame(extension_rows)
+            print(f"Agregando {len(df_extensiones)} registros proyectados para mantener continuidad académica.")
+            df_activos = pd.concat([df_activos, df_extensiones], ignore_index=True)
     
     # Filtro inteligente: Eliminar periodos futuros y detectar el último mes si está incompleto
     volumen_por_mes = df_activos['Periodo_Real'].value_counts().sort_index()
@@ -190,7 +299,9 @@ def process_data(pregrado_csv, posgrado_csv, output_pregrado, output_posgrado):
     cond2 = (df_activos['Idx_Siguiente'] - df_activos['Idx_Actual']) > 1
     df_activos['Desercion'] = (cond1 | cond2).astype(int)
     
-    df_cursos = df_activos.groupby(['Periodo_Real', 'Año', 'Mes_Nombre', 'Programa_Base', 'Asignatura']).agg({
+    # Para asignaturas críticas evaluamos solo cursos originales (sin extensiones para no duplicar conteos)
+    df_eval_cursos = df_activos[df_activos.get('Es_Extension_Curso', False) != True]
+    df_cursos = df_eval_cursos.groupby(['Periodo_Real', 'Año', 'Mes_Nombre', 'Programa_Base', 'Asignatura']).agg({
         'Desaprobado': 'sum',
         'Desercion': 'sum',
         'DNI': 'nunique'
@@ -311,8 +422,10 @@ def process_data(pregrado_csv, posgrado_csv, output_pregrado, output_posgrado):
                 nuevos_traslados = 0
                 nuevos_convalidados = df_nuevos[df_nuevos['Convalidado'] == 'SI']['DNI'].nunique() if 'Convalidado' in df_nuevos.columns else 0
             
-            año_actual = df_mes['Año'].iloc[0] if not df_mes.empty else periodo_real.split('-')[0]
-            mes_nombre = df_mes['Mes_Nombre'].iloc[0] if not df_mes.empty else "N/A"
+            p_parts = periodo_real.split('-')
+            año_actual = df_mes['Año'].iloc[0] if not df_mes.empty else p_parts[0]
+            mes_num_int = int(p_parts[1]) if len(p_parts) > 1 and p_parts[1].isdigit() else 1
+            mes_nombre = df_mes['Mes_Nombre'].iloc[0] if (not df_mes.empty and pd.notna(df_mes['Mes_Nombre'].iloc[0])) else MES_NUM_TO_NOMBRE.get(mes_num_int, "N/A")
             
             mat_distancia = df_mes[df_mes['Modalidad_Asignatura'].str.contains('VIRTUAL|DISTANCIA', case=False, na=False)]['DNI'].nunique()
             mat_presencial = df_mes[df_mes['Modalidad_Asignatura'].str.contains('PRESENCIAL', case=False, na=False)]['DNI'].nunique()
@@ -377,6 +490,22 @@ def process_data(pregrado_csv, posgrado_csv, output_pregrado, output_posgrado):
     print("Procesamiento completado exitosamente.")
 
 if __name__ == '__main__':
-    pregrado_file = "Base de datos historial academico de alumnos de pregrado - Julio.csv"
-    posgrado_file = "base de datos de historial académico de alumnos de posgrado.csv"
+    import os, sys
+    if len(sys.argv) > 2:
+        pregrado_file = sys.argv[1]
+        posgrado_file = sys.argv[2]
+    else:
+        # Usar las bases actualizadas de Octubre 2026 (con serie histórica 2014-2026 y Meses_Curso)
+        oct_dir = os.path.join("data", "Bases de datos octubre 2026")
+        pregrado_file = os.path.join(oct_dir, "pregrago historiala academico 10-2026 (2).csv")
+        if not os.path.exists(pregrado_file):
+            pregrado_file = "Base de datos historial academico de alumnos de pregrado - Octubre.csv"
+            
+        posgrado_file = os.path.join(oct_dir, "Posgrado historial academico 10-2026 (2).csv")
+        if not os.path.exists(posgrado_file):
+            posgrado_file = "base de datos de historial académico de alumnos de posgrado.csv"
+
+    print("Iniciando procesamiento de bases de datos completas (2014 - 2026):")
+    print(f" - Pregrado: {pregrado_file}")
+    print(f" - Posgrado: {posgrado_file}")
     process_data(pregrado_file, posgrado_file, "Cuadro_Mando_Pregrado_Calculado.csv", "Cuadro_Mando_Posgrado_Calculado.csv")

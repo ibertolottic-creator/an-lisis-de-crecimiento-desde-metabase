@@ -124,8 +124,9 @@ if not df.empty:
 if df.empty:
     st.warning(f"No se encontraron datos para {nivel_seleccionado}. Ejecuta `python etl_processor.py` primero.")
 else:
-    años_disponibles = sorted(df['Año'].unique().tolist())
-    años_seleccionados = st.sidebar.multiselect("Seleccionar Año(s)", años_disponibles, default=años_disponibles[-1:])
+    años_disponibles = sorted([str(x) for x in df['Año'].unique().tolist() if pd.notnull(x)])
+    default_ano = ['2026'] if '2026' in años_disponibles else años_disponibles[-1:]
+    años_seleccionados = st.sidebar.multiselect("Seleccionar Año(s)", años_disponibles, default=default_ano, key=f"anos_sel_{nivel_seleccionado}")
     
     if not años_seleccionados:
         st.warning("Por favor, selecciona al menos un año.")
@@ -172,7 +173,7 @@ else:
     meses_brutos = [str(x) for x in df_filtrado_año['Mes'].unique() if pd.notnull(x) and str(x).lower() != 'nan']
     meses_disponibles = sorted(meses_brutos, key=lambda x: orden_meses.index(x) if x in orden_meses else 99)
     
-    mes_seleccionado = st.sidebar.selectbox("Seleccionar Mes para KPIs", meses_disponibles, index=len(meses_disponibles)-1 if meses_disponibles else 0)
+    mes_seleccionado = st.sidebar.selectbox("Seleccionar Mes para KPIs", meses_disponibles, index=len(meses_disponibles)-1 if meses_disponibles else 0, key=f"mes_sel_{nivel_seleccionado}")
     
     # -----------------------------------------------------
     # CÁLCULOS DE LÍNEA DE TIEMPO (Histórico, 6m, Actual)
@@ -192,13 +193,13 @@ else:
     df_timeline_full = df_full_prog.groupby(['Periodo_Real', 'Año', 'Mes']).sum(numeric_only=True).reset_index()
     df_timeline_full = df_timeline_full.sort_values('Periodo_Real').reset_index(drop=True)
     
-    año_anchor = max(años_seleccionados)
-    anchor_idx = df_timeline_full.index[(df_timeline_full['Año'] == año_anchor) & (df_timeline_full['Mes'] == mes_seleccionado)].tolist()
+    año_anchor = str(max(años_seleccionados))
+    anchor_idx = df_timeline_full.index[(df_timeline_full['Año'].astype(str) == año_anchor) & (df_timeline_full['Mes'] == mes_seleccionado)].tolist()
     
-    # Inicializar variables (Evitar NameError si anchor_idx es vacío)
-    admitidos_mat_curr = admitidos_mat_3m = admitidos_mat_6m = admitidos_mat_12m = admitidos_mat_hist = 0
+    # Inicializar TODAS las variables rodantes a 0 para evitar NameError si anchor_idx es vacío
+    admitidos_mat_curr = admitidos_mat_3m = admitidos_mat_6m = admitidos_mat_12m = admitidos_mat_24m = admitidos_mat_60m = admitidos_mat_hist = 0
     recuperados_curr = recuperados_3m = recuperados_6m = recuperados_12m = recuperados_hist = 0
-    crecimiento_curr = crecimiento_3m = crecimiento_6m = crecimiento_12m = crecimiento_hist = 0
+    crecimiento_curr = crecimiento_3m = crecimiento_6m = crecimiento_12m = crecimiento_24m = crecimiento_60m = crecimiento_hist = 0
     traslados_curr = convalidados_curr = regulares_curr = 0
     total_matriculados = 0
     riesgo_1 = riesgo_2 = temprana = tardia = muy_tardia = 0

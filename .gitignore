@@ -1,8 +1,7 @@
 # Datos sensibles
-data/*.csv
-data/*.json
-data/*.xlsx
-!data/.gitkeep
+data/
+data/**
+Base de datos historial academico de alumnos de pregrado - Octubre.csv
 
 # Python
 __pycache__/

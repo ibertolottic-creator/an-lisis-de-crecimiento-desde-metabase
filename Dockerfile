@@ -15,12 +15,11 @@ RUN apt-get update && apt-get install -y \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copiar todo el contenido del proyecto al contenedor
+# Copiar el contenido del proyecto al contenedor
 COPY . .
 
 # Informar que la app escuchará en el puerto 8080 (estándar de Cloud Run)
 EXPOSE 8080
 
-# Configuración para que Streamlit use el puerto asignado por Google Cloud Run ($PORT)
-# y deshabilite opciones que no son necesarias en la nube
-ENTRYPOINT streamlit run app.py --server.port=$PORT --server.address=0.0.0.0 --server.enableCORS=false --server.enableXsrfProtection=false
+# Ejecutar Streamlit en Cloud Run
+CMD ["sh", "-c", "streamlit run app.py --server.port=${PORT:-8080} --server.address=0.0.0.0 --server.enableCORS=false --server.enableXsrfProtection=false"]
