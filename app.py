@@ -219,6 +219,68 @@ def load_longitudinal_data(mtime):
     return pd.DataFrame()
 
 st.sidebar.header("⚙️ Filtros Principales")
+
+with st.sidebar.expander("🔄 Actualización Mensual de Datos", expanded=False):
+    st.markdown("Sube las nuevas bases exportadas de Metabase para recalcular los cuadros de mando:")
+    up_pre = st.file_uploader("Pregrado (historial académico)", type=["csv"], key="upload_pregrado")
+    up_pos = st.file_uploader("Posgrado (historial académico)", type=["csv"], key="upload_posgrado")
+    
+    col_btn1, col_btn2 = st.columns(2)
+    with col_btn1:
+        btn_procesar = st.button("🚀 Procesar", type="primary", use_container_width=True)
+    with col_btn2:
+        btn_recalc = st.button("♻️ Recalcular", help="Recalcula con las bases guardadas en el sistema", use_container_width=True)
+        
+    if btn_procesar:
+        if up_pre is not None and up_pos is not None:
+            with st.spinner("⏳ Analizando cohortes y deserciones... (aprox 20-30 seg)"):
+                try:
+                    os.makedirs("temp_uploads", exist_ok=True)
+                    pre_path = os.path.join("temp_uploads", "pregrado_subido.csv")
+                    pos_path = os.path.join("temp_uploads", "posgrado_subido.csv")
+                    with open(pre_path, "wb") as f:
+                        f.write(up_pre.getbuffer())
+                    with open(pos_path, "wb") as f:
+                        f.write(up_pos.getbuffer())
+                    
+                    from etl_processor import process_data
+                    process_data(pre_path, pos_path, "Cuadro_Mando_Pregrado_Calculado.csv", "Cuadro_Mando_Posgrado_Calculado.csv")
+                    st.cache_data.clear()
+                    st.success("✅ ¡Datos actualizados exitosamente!")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"❌ Error al procesar: {e}")
+        else:
+            st.warning("⚠️ Debes subir ambos archivos (Pregrado y Posgrado) para actualizar.")
+            
+    if btn_recalc:
+        with st.spinner("⏳ Recalculando con bases del sistema..."):
+            try:
+                oct_dir = os.path.join("data", "Bases de datos octubre 2026")
+                pre_default = os.path.join(oct_dir, "pregrago historiala academico 10-2026 (2).csv")
+                pos_default = os.path.join(oct_dir, "Posgrado historial academico 10-2026 (2).csv")
+                if not os.path.exists(pre_default):
+                    pre_default = "Base de datos historial academico de alumnos de pregrado - Octubre.csv"
+                if not os.path.exists(pos_default):
+                    pos_default = "base de datos de historial académico de alumnos de posgrado.csv"
+                from etl_processor import process_data
+                process_data(pre_default, pos_default, "Cuadro_Mando_Pregrado_Calculado.csv", "Cuadro_Mando_Posgrado_Calculado.csv")
+                st.cache_data.clear()
+                st.success("✅ ¡Recalculado con éxito!")
+                st.rerun()
+            except Exception as e:
+                st.error(f"❌ Error: {e}")
+
+    # Descarga de cuadros de mando calculados para respaldo
+    st.markdown("---")
+    st.markdown("**💾 Descargar Cuadros Calculados:**")
+    if os.path.exists("Cuadro_Mando_Pregrado_Calculado.csv"):
+        with open("Cuadro_Mando_Pregrado_Calculado.csv", "rb") as f:
+            st.download_button("📥 Descargar Pregrado (.csv)", f, "Cuadro_Mando_Pregrado_Calculado.csv", "text/csv", use_container_width=True)
+    if os.path.exists("Cuadro_Mando_Posgrado_Calculado.csv"):
+        with open("Cuadro_Mando_Posgrado_Calculado.csv", "rb") as f:
+            st.download_button("📥 Descargar Posgrado (.csv)", f, "Cuadro_Mando_Posgrado_Calculado.csv", "text/csv", use_container_width=True)
+
 nivel_seleccionado = st.sidebar.radio("Nivel Académico", ["Pregrado", "Posgrado"], index=0)
 
 if nivel_seleccionado == "Pregrado":
