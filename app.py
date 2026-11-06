@@ -1,16 +1,139 @@
 import streamlit as st
+import streamlit.components.v1 as components
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import os
+import re
 from config.settings import PERIODO_ACTUAL
 
 st.set_page_config(page_title="Dashboard Académico Avanzado", layout="wide", initial_sidebar_state="expanded")
 
+def setup_inactivity_autodisconnect(timeout_minutes=10):
+    """
+    Desconecta la sesión de Streamlit tras un periodo de inactividad del usuario (10 min por defecto).
+    Cierra los WebSockets activos y bloquea reconexiones en segundo plano para que Google Cloud Run
+    detecte 0 conexiones activas y apague el contenedor inmediatamente, evitando costos no deseados.
+    """
+    timeout_ms = timeout_minutes * 60 * 1000
+    js_code = f"""
+    <script>
+    (function() {{
+        const TIMEOUT_MS = {timeout_ms};
+        let timeoutTimer = null;
+        let activeSockets = [];
+
+        // Interceptar creación de WebSockets en el parent window para poder cerrarlos
+        if (window.parent && window.parent.WebSocket) {{
+            const OrigWebSocket = window.parent.WebSocket;
+            window.parent._activeWebSockets = activeSockets;
+            window.parent.WebSocket = function(...args) {{
+                const ws = new OrigWebSocket(...args);
+                activeSockets.push(ws);
+                ws.addEventListener('close', () => {{
+                    activeSockets = activeSockets.filter(s => s !== ws);
+                    window.parent._activeWebSockets = activeSockets;
+                }});
+                return ws;
+            }};
+            window.parent.WebSocket.prototype = OrigWebSocket.prototype;
+        }}
+
+        function disconnectAndShowOverlay() {{
+            console.warn("Inactivity timeout reached (" + (TIMEOUT_MS / 60000) + " min). Disconnecting session to save cloud costs...");
+            
+            // Cerrar todos los WebSockets activos
+            if (activeSockets && activeSockets.length > 0) {{
+                activeSockets.forEach(ws => {{
+                    try {{ ws.close(1000, "Inactivity timeout"); }} catch(e) {{}}
+                }});
+                activeSockets = [];
+            }}
+
+            // Bloquear reconexiones futuras reemplazando WebSocket con dummy
+            if (window.parent) {{
+                window.parent.WebSocket = class DummyWebSocket {{
+                    constructor() {{
+                        console.warn("Reconnection blocked due to inactivity timeout.");
+                    }}
+                    close() {{}}
+                    send() {{}}
+                    addEventListener() {{}}
+                    removeEventListener() {{}}
+                }};
+                try {{ window.parent.stop(); }} catch(e) {{}}
+            }}
+
+            // Inyectar el overlay visual elegante en la ventana principal
+            if (window.parent && window.parent.document) {{
+                if (!window.parent.document.getElementById('inactivity-disconnect-overlay')) {{
+                    const overlay = window.parent.document.createElement('div');
+                    overlay.id = 'inactivity-disconnect-overlay';
+                    overlay.style.position = 'fixed';
+                    overlay.style.top = '0';
+                    overlay.style.left = '0';
+                    overlay.style.width = '100vw';
+                    overlay.style.height = '100vh';
+                    overlay.style.backgroundColor = 'rgba(15, 23, 42, 0.96)';
+                    overlay.style.backdropFilter = 'blur(8px)';
+                    overlay.style.zIndex = '999999999';
+                    overlay.style.display = 'flex';
+                    overlay.style.flexDirection = 'column';
+                    overlay.style.alignItems = 'center';
+                    overlay.style.justifyContent = 'center';
+                    overlay.style.color = '#f8fafc';
+                    overlay.style.fontFamily = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+                    overlay.style.padding = '24px';
+                    overlay.style.textAlign = 'center';
+
+                    overlay.innerHTML = `
+                        <div style="background: #1e293b; border: 1px solid #334155; border-radius: 16px; padding: 40px; max-width: 500px; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7);">
+                            <div style="font-size: 54px; margin-bottom: 16px;">⏸️</div>
+                            <h2 style="margin: 0 0 12px 0; font-size: 24px; font-weight: 700; color: #f8fafc;">Sesión Pausada por Inactividad</h2>
+                            <p style="margin: 0 0 24px 0; font-size: 15px; color: #94a3b8; line-height: 1.6;">
+                                Para proteger los recursos de la universidad y evitar costos innecesarios en Google Cloud, la conexión del servidor se apagó automáticamente tras 10 minutos sin actividad.
+                            </p>
+                            <button id="btn-reconnect-dashboard" style="background: #2563eb; color: #ffffff; border: none; padding: 12px 28px; font-size: 15px; font-weight: 600; border-radius: 8px; cursor: pointer; transition: all 0.2s ease; box-shadow: 0 4px 14px rgba(37,99,235,0.4);">
+                                🔄 Reanudar Dashboard
+                            </button>
+                        </div>
+                    `;
+                    window.parent.document.body.appendChild(overlay);
+
+                    const btn = window.parent.document.getElementById('btn-reconnect-dashboard');
+                    if (btn) {{
+                        btn.onmouseover = () => btn.style.background = '#1d4ed8';
+                        btn.onmouseout = () => btn.style.background = '#2563eb';
+                        btn.onclick = () => window.parent.location.reload();
+                    }}
+                }}
+            }}
+        }}
+
+        function resetTimer() {{
+            if (timeoutTimer) clearTimeout(timeoutTimer);
+            timeoutTimer = setTimeout(disconnectAndShowOverlay, TIMEOUT_MS);
+        }}
+
+        // Escuchar eventos de interacción en la ventana principal
+        if (window.parent && window.parent.document) {{
+            const events = ['mousemove', 'mousedown', 'keydown', 'scroll', 'touchstart'];
+            events.forEach(evt => {{
+                window.parent.document.addEventListener(evt, resetTimer, {{ passive: true }});
+            }});
+        }}
+
+        resetTimer();
+    }})();
+    </script>
+    """
+    components.html(js_code, height=0, width=0)
+
+# Inyectar detector de inactividad (10 minutos)
+setup_inactivity_autodisconnect(timeout_minutes=10)
+
 st.title("📊 Sistema de Análisis Estratégico y Deserción - USMP")
 st.markdown("Dashboard interactivo para visualizar métricas clave y factores de riesgo para Machine Learning.")
-
-import re
 
 def clean_program_name(name):
     if not isinstance(name, str):
